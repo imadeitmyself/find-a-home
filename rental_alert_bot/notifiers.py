@@ -166,9 +166,12 @@ def format_alert(listing: Listing) -> str:
     price = "GBP %s pcm" % listing.price_pcm if listing.price_pcm is not None else "Price unknown"
     beds = "%s bed" % listing.bedrooms if listing.bedrooms is not None else "Beds unknown"
     area = listing.postcode_area or "Area unknown"
+    heading = "New rental match"
+    if listing.metadata.get("recent_reason"):
+        heading = "%s: %s" % (heading, listing.metadata["recent_reason"])
     return "\n".join(
         [
-            "New rental match",
+            heading,
             "%s" % listing.title,
             "%s | %s | %s" % (price, beds, area),
             "Source: %s" % listing.source,

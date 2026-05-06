@@ -30,6 +30,17 @@ WORD_BED_RE = re.compile(
     r"\b(one|two|three|four|five|six)[-\s]+(?:bed|beds|bedroom|bedrooms)\b",
     re.IGNORECASE,
 )
+RECENT_RELATIVE_RE = re.compile(
+    r"\b(?:added|listed|published|posted|reduced|updated)\s+"
+    r"(?:(\d+)\s*(minute|minutes|min|mins|hour|hours|hr|hrs)|(?:less\s+than|under|<)\s+(?:an?\s+|1\s+)?(hour|hr))"
+    r"\s+ago\b",
+    re.IGNORECASE,
+)
+RECENT_NOW_RE = re.compile(
+    r"\b(?:(?:just|newly)\s+(?:added|listed|published|posted|reduced|updated)|"
+    r"(?:added|listed|published|posted|reduced|updated)\s+(?:just\s+)?now)\b",
+    re.IGNORECASE,
+)
 
 
 def normalize_space(text: str) -> str:
@@ -155,3 +166,22 @@ def is_generic_listing_title(title: str, url: str) -> bool:
         "/to-rent",
     )
     return any(normalized_url.endswith(suffix) for suffix in generic_suffixes)
+
+
+def recent_listing_reason(text: str, max_age_minutes: int = 60) -> Optional[str]:
+    normalized = normalize_space(text).lower()
+    if RECENT_NOW_RE.search(normalized):
+        return "explicitly marked just added/updated"
+
+    for match in RECENT_RELATIVE_RE.finditer(normalized):
+        amount = match.group(1)
+        unit = (match.group(2) or match.group(3) or "").lower()
+        if amount is None:
+            return "explicitly marked less than an hour ago"
+
+        value = int(amount)
+        minutes = value * 60 if unit.startswith(("hour", "hr")) else value
+        if minutes <= max_age_minutes:
+            return "explicitly marked %s minutes ago" % minutes
+
+    return None

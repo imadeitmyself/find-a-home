@@ -10,6 +10,7 @@ from .matcher import match_listing
 from .models import AppConfig, Listing, SourceConfig
 from .notifiers import Notifier, format_alert
 from .store import ListingStore
+from .text import recent_listing_reason
 
 
 def run_forever(
@@ -30,6 +31,7 @@ def run_once(
     notifier: Optional[Notifier],
     dry_run: bool,
     seed: bool,
+    recent_only_minutes: Optional[int] = None,
 ) -> int:
     robots = RobotsCache(config.user_agent, config.request_timeout_seconds)
     accepted_count = 0
@@ -50,7 +52,16 @@ def run_once(
 
             candidates = extract_listings(source.name, url, html, allowed_areas=config.criteria.postcode_areas)
             print("Found %s candidates on %s" % (len(candidates), source.name), flush=True)
-            accepted_count += _process_candidates(config, source, candidates, store, notifier, dry_run, seed)
+            accepted_count += _process_candidates(
+                config,
+                source,
+                candidates,
+                store,
+                notifier,
+                dry_run,
+                seed,
+                recent_only_minutes=recent_only_minutes,
+            )
 
     return accepted_count
 
@@ -63,6 +74,7 @@ def _process_candidates(
     notifier: Optional[Notifier],
     dry_run: bool,
     seed: bool,
+    recent_only_minutes: Optional[int] = None,
 ) -> int:
     accepted_count = 0
     for listing in candidates:
@@ -71,6 +83,21 @@ def _process_candidates(
             if dry_run:
                 print("REJECT %s :: %s" % (listing.title, ", ".join(result.reasons)), flush=True)
             continue
+
+        if recent_only_minutes is not None:
+            recent_reason = recent_listing_reason(
+                "%s %s" % (listing.title, listing.raw_text),
+                max_age_minutes=recent_only_minutes,
+            )
+            if recent_reason is None:
+                if dry_run:
+                    print(
+                        "REJECT_RECENCY %s :: no explicit <=%s minute listing marker"
+                        % (listing.title, recent_only_minutes),
+                        flush=True,
+                    )
+                continue
+            listing.metadata["recent_reason"] = recent_reason
 
         accepted_count += 1
         message = format_alert(listing)

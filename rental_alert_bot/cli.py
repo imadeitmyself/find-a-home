@@ -22,6 +22,7 @@ def main(argv: Optional[list] = None) -> int:
         "seed-current",
         "run",
         "test-alert",
+        "recent-alerts",
         "telegram-info",
         "export-supabase-seed",
         "export-supabase-directory-seed",
@@ -31,6 +32,9 @@ def main(argv: Optional[list] = None) -> int:
         if name == "run":
             command.add_argument("--once", action="store_true", help="Run one poll cycle and exit.")
             command.add_argument("--interval", type=int, default=None, help="Override polling interval in seconds.")
+        if name == "recent-alerts":
+            command.add_argument("--minutes", type=int, default=60, help="Only alert explicit recent markers within this many minutes.")
+            command.add_argument("--dry-run", action="store_true", help="Print qualifying recent matches without sending alerts.")
         if name == "export-supabase-seed":
             command.add_argument(
                 "--agents",
@@ -85,6 +89,22 @@ def main(argv: Optional[list] = None) -> int:
             return 1
         print("Sent test alert via %s" % getattr(notifier, "channel", "unknown"))
         return 0
+
+    if args.command == "recent-alerts":
+        store = ListingStore(config.database_path)
+        notifier = None if args.dry_run else build_notifier_from_env(config.request_timeout_seconds, allow_print=False)
+        try:
+            run_once(
+                config=config,
+                store=store if not args.dry_run else None,
+                notifier=notifier,
+                dry_run=args.dry_run,
+                seed=False,
+                recent_only_minutes=args.minutes,
+            )
+            return 0
+        finally:
+            store.close()
 
     if args.command == "telegram-info":
         import os

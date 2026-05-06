@@ -5,6 +5,7 @@ from rental_alert_bot.text import (
     parse_bedrooms,
     parse_postcode_area,
     parse_price_pcm,
+    recent_listing_reason,
 )
 
 
@@ -31,6 +32,13 @@ class TextParsingTests(unittest.TestCase):
         self.assertTrue(is_unavailable_text("GBP 2,999 Pcm Let (Tenant Info)"))
         self.assertTrue(is_unavailable_text("LET\n2 bedroom flat"))
         self.assertFalse(is_unavailable_text("2 bedroom flat to let in E9"))
+
+    def test_recent_listing_reason(self):
+        self.assertEqual(recent_listing_reason("Added 35 minutes ago"), "explicitly marked 35 minutes ago")
+        self.assertEqual(recent_listing_reason("Listed less than an hour ago"), "explicitly marked less than an hour ago")
+        self.assertEqual(recent_listing_reason("Just added"), "explicitly marked just added/updated")
+        self.assertIsNone(recent_listing_reason("Added 2 hours ago"))
+        self.assertIsNone(recent_listing_reason("Added today"))
 
 
 if __name__ == "__main__":
