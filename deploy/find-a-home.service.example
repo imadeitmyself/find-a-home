@@ -1,0 +1,15 @@
+[Unit]
+Description=Find A Home rental alert bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/find-a-home
+EnvironmentFile=/opt/find-a-home/.env
+ExecStart=/usr/bin/python3 -m rental_alert_bot run --config /opt/find-a-home/config.json
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

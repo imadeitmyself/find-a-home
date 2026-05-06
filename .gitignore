@@ -1,0 +1,14 @@
+.env
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+htmlcov/
+.coverage
+dist/
+build/
+*.egg-info/
+supabase/.temp/

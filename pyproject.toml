@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "find-a-home"
+version = "0.1.0"
+description = "Fast rental listing monitor for estate-agent sites with Telegram/email alerts."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+find-a-home = "rental_alert_bot.cli:main"
+rental-alert-bot = "rental_alert_bot.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["rental_alert_bot*"]

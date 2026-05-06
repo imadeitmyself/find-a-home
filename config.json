@@ -1,0 +1,83 @@
+{
+  "poll_interval_seconds": 90,
+  "request_timeout_seconds": 15,
+  "respect_robots_txt": true,
+  "database_path": "data/listings.sqlite3",
+  "source_files": ["data/agent_rental_listing_urls_e8_e9_n1_e2.csv"],
+  "user_agent": "find-a-home/0.1 (+mailto:you@example.com)",
+  "criteria": {
+    "postcode_areas": ["E9", "E8", "N1", "E2"],
+    "bedrooms": 2,
+    "min_price_pcm": 2750,
+    "max_price_pcm": 3750,
+    "allow_unknown_area": false,
+    "exclude_keywords": [
+      "short let",
+      "holiday let",
+      "serviced apartment",
+      "student accommodation"
+    ]
+  },
+  "sources": [
+    {
+      "name": "Dexters E9",
+      "enabled": true,
+      "urls": ["https://www.dexters.co.uk/property-lettings/flats-to-rent-in-e9"]
+    },
+    {
+      "name": "Dexters E8",
+      "enabled": true,
+      "urls": ["https://www.dexters.co.uk/property-lettings/flats-to-rent-in-e8"]
+    },
+    {
+      "name": "Dexters N1",
+      "enabled": true,
+      "urls": ["https://www.dexters.co.uk/property-lettings/flats-to-rent-in-n1"]
+    },
+    {
+      "name": "Dexters E2",
+      "enabled": true,
+      "urls": ["https://www.dexters.co.uk/property-lettings/flats-to-rent-in-e2"]
+    },
+    {
+      "name": "Foxtons E9",
+      "enabled": true,
+      "urls": ["https://www.foxtons.co.uk/flats-to-rent/e9/2-bedroom"]
+    },
+    {
+      "name": "Foxtons E8",
+      "enabled": true,
+      "urls": ["https://www.foxtons.co.uk/flats-to-rent/e8/2-bedroom"]
+    },
+    {
+      "name": "Foxtons N1",
+      "enabled": true,
+      "urls": ["https://www.foxtons.co.uk/flats-to-rent/n1/2-bedroom"]
+    },
+    {
+      "name": "Foxtons E2",
+      "enabled": true,
+      "urls": ["https://www.foxtons.co.uk/flats-to-rent/e2/2-bedroom"]
+    },
+    {
+      "name": "Winkworth Hackney",
+      "enabled": false,
+      "urls": ["https://www.winkworth.co.uk/properties/lettings?search=E8%2CE9%2CN1%2CE2&bedrooms=2"]
+    },
+    {
+      "name": "Keatons",
+      "enabled": false,
+      "urls": ["https://www.keatons.com/to-rent/"]
+    },
+    {
+      "name": "Homefinders",
+      "enabled": false,
+      "urls": ["https://www.homefinders.net/properties-for-letting/"]
+    },
+    {
+      "name": "Stirling Ackroyd",
+      "enabled": false,
+      "urls": ["https://www.stirlingackroyd.com/property-to-rent/"]
+    }
+  ]
+}
