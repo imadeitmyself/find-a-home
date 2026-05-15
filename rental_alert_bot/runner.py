@@ -70,8 +70,8 @@ def run_once(
                             )
                         if outcome.outcome not in ("skip",):
                             outcomes.append(outcome)
-        except RuntimeError as exc:
-            # camoufox not installed (local dev) — log and record all browser sources as errors
+        except Exception as exc:
+            # camoufox not installed or browser failed to launch — log and record all browser sources as errors
             print("ERROR browser fetch unavailable: %s" % exc, flush=True)
             for source in browser_sources:
                 for url in source.urls:
