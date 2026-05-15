@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from typing import Iterable, List, Optional, Tuple
 
@@ -13,6 +14,8 @@ from .models import AppConfig, Listing, SourceConfig
 from .notifiers import Notifier, format_alert, format_health_alert, format_health_recovery
 from .store import ListingStore
 from .text import recent_listing_reason
+
+logger = logging.getLogger(__name__)
 
 
 def run_forever(
@@ -68,9 +71,9 @@ def run_once(
         try:
             with BrowserFetcher(timeout_seconds=config.request_timeout_seconds, use_proxy=use_proxy) as fetcher:
                 if use_proxy and fetcher._proxy:
-                    print("Browser [%s]: proxy enabled via %s" % (label, fetcher._proxy.get("server", "")), flush=True)
+                    logger.info("Browser [%s]: proxy enabled via %s", label, fetcher._proxy.get("server", ""))
                 elif use_proxy:
-                    print("Browser [%s]: no proxy configured, running headless-only" % label, flush=True)
+                    logger.info("Browser [%s]: no proxy configured, running headless-only", label)
                 for source in tier_sources:
                     for url in source.urls:
                         html, outcome = _fetch_browser(source, url, robots, config, fetcher)
@@ -83,7 +86,7 @@ def run_once(
                         if outcome.outcome not in ("skip",):
                             outcomes.append(outcome)
         except Exception as exc:
-            print("ERROR browser [%s] unavailable: %s" % (label, exc), flush=True)
+            logger.error("Browser [%s] unavailable: %s", label, exc)
             for source in tier_sources:
                 for url in source.urls:
                     outcomes.append(SourceOutcome(source.name, url, "error", error_detail=str(exc)))
@@ -101,17 +104,17 @@ def _fetch_plain(
     config: AppConfig,
 ) -> Tuple[Optional[str], SourceOutcome]:
     """Returns (html, outcome). html is None on failure or skip."""
-    print("Fetching [T3] %s: %s" % (source.name, url), flush=True)
+    logger.info("FETCH [T3] %s: %s", source.name, url)
     if config.respect_robots_txt and not robots.can_fetch(url):
-        print("SKIP robots.txt disallows %s" % url, flush=True)
+        logger.info("SKIP robots.txt disallows %s", url)
         return None, SourceOutcome(source.name, url, "skip")
     try:
         html = fetch_text(url, config.user_agent, config.request_timeout_seconds)
         return html, SourceOutcome(source.name, url, "ok")
     except Exception as exc:
         error_str = str(exc)
-        print("ERROR %s" % error_str, flush=True)
         outcome_type = "http_error" if error_str.startswith("HTTP") else "network_error"
+        logger.error("ERROR [T3] %s: %s", source.name, error_str)
         return None, SourceOutcome(source.name, url, outcome_type, error_detail=error_str)
 
 
@@ -124,17 +127,17 @@ def _fetch_browser(
 ) -> Tuple[Optional[str], SourceOutcome]:
     """Returns (html, outcome). html is None on failure or skip."""
     tier_label = "T%s" % source.tier
-    print("Fetching [%s] %s: %s" % (tier_label, source.name, url), flush=True)
+    logger.info("FETCH [%s] %s: %s", tier_label, source.name, url)
     if config.respect_robots_txt and not robots.can_fetch(url):
-        print("SKIP robots.txt disallows %s" % url, flush=True)
+        logger.info("SKIP robots.txt disallows %s", url)
         return None, SourceOutcome(source.name, url, "skip")
     try:
         html = fetcher.fetch(url)
         return html, SourceOutcome(source.name, url, "ok")
     except Exception as exc:
         error_str = str(exc)
-        print("ERROR %s" % error_str, flush=True)
         outcome_type = "http_error" if "HTTP" in error_str else "network_error"
+        logger.error("ERROR [%s] %s: %s", tier_label, source.name, error_str)
         return None, SourceOutcome(source.name, url, outcome_type, error_detail=error_str)
 
 
@@ -146,7 +149,11 @@ def _extract_and_count(
     outcome: SourceOutcome,
 ) -> List[Listing]:
     candidates = extract_listings(source.name, url, html, allowed_areas=config.criteria.postcode_areas)
-    print("Found %s candidates on %s" % (len(candidates), source.name), flush=True)
+    tier_label = "T%d" % source.tier
+    if candidates:
+        logger.info("RESULT [%s] %s: %d candidates", tier_label, source.name, len(candidates))
+    else:
+        logger.warning("RESULT [%s] %s: EMPTY", tier_label, source.name)
     outcome.outcome = "ok" if candidates else "empty"
     outcome.candidate_count = len(candidates)
     return candidates
@@ -165,7 +172,7 @@ def _process_health(
         try:
             notifier.send_text(format_health_alert(alertable))
         except Exception as exc:
-            print("ERROR health alert failed: %s" % exc, flush=True)
+            logger.error("Health alert failed: %s", exc)
         store.health.mark_alerted([row["source_key"] for row in alertable])
 
     recovered = store.health.get_recovered()
@@ -173,7 +180,7 @@ def _process_health(
         try:
             notifier.send_text(format_health_recovery(recovered))
         except Exception as exc:
-            print("ERROR recovery alert failed: %s" % exc, flush=True)
+            logger.error("Recovery alert failed: %s", exc)
         store.health.mark_recovered([row["source_key"] for row in recovered])
 
 
@@ -192,7 +199,7 @@ def _process_candidates(
         result = match_listing(listing, config.criteria, source)
         if not result.accepted:
             if dry_run:
-                print("REJECT %s :: %s" % (listing.title, ", ".join(result.reasons)), flush=True)
+                logger.info("REJECT %s :: %s", listing.title, ", ".join(result.reasons))
             continue
 
         if recent_only_minutes is not None:
@@ -202,10 +209,9 @@ def _process_candidates(
             )
             if recent_reason is None:
                 if dry_run:
-                    print(
-                        "REJECT_RECENCY %s :: no explicit <=%s minute listing marker"
-                        % (listing.title, recent_only_minutes),
-                        flush=True,
+                    logger.info(
+                        "REJECT_RECENCY %s :: no explicit <=%s minute listing marker",
+                        listing.title, recent_only_minutes,
                     )
                 continue
             listing.metadata["recent_reason"] = recent_reason
@@ -213,7 +219,7 @@ def _process_candidates(
         accepted_count += 1
         message = format_alert(listing)
         if dry_run:
-            print("MATCH\n%s\n" % message, flush=True)
+            logger.info("MATCH %s", listing.title)
             continue
 
         if store is None:
@@ -222,7 +228,7 @@ def _process_candidates(
         if seed:
             is_new = store.upsert_seen(listing)
             if is_new:
-                print("SEEDED %s" % listing.title, flush=True)
+                logger.info("SEEDED %s", listing.title)
             continue
 
         if store.has_seen(listing):
@@ -234,10 +240,10 @@ def _process_candidates(
         try:
             notifier.send(listing, message)
         except Exception as exc:
-            print("ERROR alert failed for %s: %s" % (listing.title, exc), flush=True)
+            logger.error("Alert failed for %s: %s", listing.title, exc)
             continue
         store.upsert_seen(listing)
         store.mark_alerted(listing, getattr(notifier, "channel", "unknown"), message)
-        print("ALERTED %s" % listing.title, flush=True)
+        logger.info("ALERTED %s", listing.title)
 
     return accepted_count

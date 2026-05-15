@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import logging
+import logging.handlers
+import pathlib
 from typing import Optional
 
 from .agent_directory import load_agent_directory
@@ -10,6 +13,24 @@ from .runner import run_forever, run_once
 from .store import ListingStore
 from .models import Listing
 from .supabase_export import write_agent_directory_seed, write_agent_seed
+
+
+def _setup_logging(log_dir: str = "logs") -> None:
+    pathlib.Path(log_dir).mkdir(parents=True, exist_ok=True)
+    fmt = logging.Formatter("%(asctime)s %(levelname)-7s %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    root = logging.getLogger("rental_alert_bot")
+    root.setLevel(logging.DEBUG)
+    fh = logging.handlers.RotatingFileHandler(
+        pathlib.Path(log_dir) / "crawl.log",
+        maxBytes=5 * 1024 * 1024,
+        backupCount=10,
+        encoding="utf-8",
+    )
+    fh.setFormatter(fmt)
+    root.addHandler(fh)
+    sh = logging.StreamHandler()
+    sh.setFormatter(fmt)
+    root.addHandler(sh)
 
 
 def main(argv: Optional[list] = None) -> int:
@@ -57,6 +78,7 @@ def main(argv: Optional[list] = None) -> int:
             )
 
     args = parser.parse_args(argv)
+    _setup_logging()
     load_env_file(args.env)
     config = load_config(args.config)
 
