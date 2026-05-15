@@ -23,13 +23,17 @@ TIER_1_AGENTS = frozenset(
 TIER_2_AGENTS = frozenset(
     [
         "Chestertons",
+        "Choice Homes",
         "Ellis & Co",
         "Essential Living",
         "Felicity J. Lord",
+        "Filey Properties",
         "Grainger",
         "Home Made",
         "Hunters",
         "John D Wood & Co",
+        "Keatons",
+        "Letio",
         "Portico",
         "Stirling Ackroyd",
     ]
