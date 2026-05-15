@@ -4,6 +4,8 @@
 __pycache__/
 *.pyc
 data/*.db
+data/*.log
+data/*.pid
 data/*.sqlite
 data/*.sqlite3
 htmlcov/

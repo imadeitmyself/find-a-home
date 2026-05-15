@@ -5,6 +5,7 @@ import os
 import sqlite3
 from typing import Iterable, Optional
 
+from .health import HealthTracker
 from .models import Listing, utcnow_iso
 
 
@@ -17,6 +18,7 @@ class ListingStore:
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self._init_schema()
+        self.health = HealthTracker(self.conn)
 
     def close(self) -> None:
         self.conn.close()

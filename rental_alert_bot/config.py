@@ -8,6 +8,7 @@ from typing import Dict, List, Set, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
 from .models import AppConfig, Criteria, SourceConfig
+from .tiers import tier_for_agent
 
 
 def load_env_file(path: str = ".env") -> None:
@@ -45,6 +46,7 @@ def load_config(path: str) -> AppConfig:
             urls=list(item["urls"]),
             enabled=bool(item.get("enabled", True)),
             excluded_keywords=list(item.get("excluded_keywords", [])),
+            tier=int(item.get("tier", tier_for_agent(str(item["name"])))),
         )
         for item in raw.get("sources", [])
     ]
@@ -77,6 +79,8 @@ def load_source_file(path: str) -> List[SourceConfig]:
             postcode_area = (row.get("postcode_area") or "").strip().upper()
             listing_url = (row.get("listing_url") or row.get("url") or "").strip()
             excluded_keywords = _csv_list(row.get("excluded_keywords", ""))
+            raw_tier = row.get("tier", "").strip()
+            tier = int(raw_tier) if raw_tier.isdigit() else tier_for_agent(name)
 
             if not name and not listing_url:
                 continue
@@ -97,9 +101,13 @@ def load_source_file(path: str) -> List[SourceConfig]:
                     "names": set(),
                     "areas": set(),
                     "excluded_keywords": set(),
+                    "tier": tier,
                 },
             )
             item["enabled"] = bool(item["enabled"] or enabled)
+            # Keep the lowest (most aggressive) tier seen for this URL
+            if tier < int(item["tier"]):
+                item["tier"] = tier
             cast_set(item["names"]).add((row.get("name") or row.get("agent") or name).strip() or name)
             if postcode_area:
                 cast_set(item["areas"]).add(postcode_area)
@@ -120,6 +128,7 @@ def load_source_file(path: str) -> List[SourceConfig]:
                 urls=[str(item["url"])],
                 enabled=bool(item["enabled"]),
                 excluded_keywords=sorted(cast_set(item["excluded_keywords"])),
+                tier=int(item["tier"]),
             )
         )
     return sources
@@ -158,6 +167,7 @@ def _dedupe_sources(sources: List[SourceConfig]) -> List[SourceConfig]:
                     urls=[url],
                     enabled=source.enabled,
                     excluded_keywords=list(source.excluded_keywords),
+                    tier=source.tier,
                 )
     return list(deduped.values())
 

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import time
-from typing import Iterable, Optional
+from typing import Iterable, List, Optional, Tuple
 
+from .browser import BrowserFetcher
 from .config import load_live_sources
 from .extractor import extract_listings
+from .health import SourceOutcome
 from .http import RobotsCache, fetch_text
 from .matcher import match_listing
 from .models import AppConfig, Listing, SourceConfig
-from .notifiers import Notifier, format_alert
+from .notifiers import Notifier, format_alert, format_health_alert, format_health_recovery
 from .store import ListingStore
 from .text import recent_listing_reason
 
@@ -35,35 +37,133 @@ def run_once(
 ) -> int:
     robots = RobotsCache(config.user_agent, config.request_timeout_seconds)
     accepted_count = 0
+    outcomes: List[SourceOutcome] = []
 
-    for source in load_live_sources(config):
-        if not source.enabled:
-            continue
+    live_sources = [s for s in load_live_sources(config) if s.enabled]
+    plain_sources = [s for s in live_sources if s.tier == 3]
+    browser_sources = [s for s in live_sources if s.tier in (1, 2)]
+
+    # --- Tier 3: plain urllib ---
+    for source in plain_sources:
         for url in source.urls:
-            print("Fetching %s: %s" % (source.name, url), flush=True)
-            if config.respect_robots_txt and not robots.can_fetch(url):
-                print("SKIP robots.txt disallows %s" % url, flush=True)
-                continue
-            try:
-                html = fetch_text(url, config.user_agent, config.request_timeout_seconds)
-            except Exception as exc:
-                print("ERROR %s" % exc, flush=True)
-                continue
+            html, outcome = _fetch_plain(source, url, robots, config)
+            if html is not None:
+                candidates = _extract_and_count(html, source, url, config, outcome)
+                accepted_count += _process_candidates(
+                    config, source, candidates, store, notifier, dry_run, seed, recent_only_minutes,
+                )
+            if outcome.outcome not in ("skip",):
+                outcomes.append(outcome)
 
-            candidates = extract_listings(source.name, url, html, allowed_areas=config.criteria.postcode_areas)
-            print("Found %s candidates on %s" % (len(candidates), source.name), flush=True)
-            accepted_count += _process_candidates(
-                config,
-                source,
-                candidates,
-                store,
-                notifier,
-                dry_run,
-                seed,
-                recent_only_minutes=recent_only_minutes,
-            )
+    # --- Tier 1+2: Camoufox ---
+    if browser_sources:
+        try:
+            with BrowserFetcher(timeout_seconds=config.request_timeout_seconds) as fetcher:
+                for source in browser_sources:
+                    for url in source.urls:
+                        html, outcome = _fetch_browser(source, url, robots, config, fetcher)
+                        if html is not None:
+                            candidates = _extract_and_count(html, source, url, config, outcome)
+                            accepted_count += _process_candidates(
+                                config, source, candidates, store, notifier,
+                                dry_run, seed, recent_only_minutes,
+                            )
+                        if outcome.outcome not in ("skip",):
+                            outcomes.append(outcome)
+        except RuntimeError as exc:
+            # camoufox not installed (local dev) — log and record all browser sources as errors
+            print("ERROR browser fetch unavailable: %s" % exc, flush=True)
+            for source in browser_sources:
+                for url in source.urls:
+                    outcomes.append(SourceOutcome(source.name, url, "error", error_detail=str(exc)))
+
+    if not dry_run and store is not None:
+        _process_health(outcomes, store, notifier)
 
     return accepted_count
+
+
+def _fetch_plain(
+    source: SourceConfig,
+    url: str,
+    robots: RobotsCache,
+    config: AppConfig,
+) -> Tuple[Optional[str], SourceOutcome]:
+    """Returns (html, outcome). html is None on failure or skip."""
+    print("Fetching [T3] %s: %s" % (source.name, url), flush=True)
+    if config.respect_robots_txt and not robots.can_fetch(url):
+        print("SKIP robots.txt disallows %s" % url, flush=True)
+        return None, SourceOutcome(source.name, url, "skip")
+    try:
+        html = fetch_text(url, config.user_agent, config.request_timeout_seconds)
+        return html, SourceOutcome(source.name, url, "ok")
+    except Exception as exc:
+        error_str = str(exc)
+        print("ERROR %s" % error_str, flush=True)
+        outcome_type = "http_error" if error_str.startswith("HTTP") else "network_error"
+        return None, SourceOutcome(source.name, url, outcome_type, error_detail=error_str)
+
+
+def _fetch_browser(
+    source: SourceConfig,
+    url: str,
+    robots: RobotsCache,
+    config: AppConfig,
+    fetcher: BrowserFetcher,
+) -> Tuple[Optional[str], SourceOutcome]:
+    """Returns (html, outcome). html is None on failure or skip."""
+    tier_label = "T%s" % source.tier
+    print("Fetching [%s] %s: %s" % (tier_label, source.name, url), flush=True)
+    if config.respect_robots_txt and not robots.can_fetch(url):
+        print("SKIP robots.txt disallows %s" % url, flush=True)
+        return None, SourceOutcome(source.name, url, "skip")
+    try:
+        html = fetcher.fetch(url)
+        return html, SourceOutcome(source.name, url, "ok")
+    except Exception as exc:
+        error_str = str(exc)
+        print("ERROR %s" % error_str, flush=True)
+        outcome_type = "http_error" if "HTTP" in error_str else "network_error"
+        return None, SourceOutcome(source.name, url, outcome_type, error_detail=error_str)
+
+
+def _extract_and_count(
+    html: str,
+    source: SourceConfig,
+    url: str,
+    config: AppConfig,
+    outcome: SourceOutcome,
+) -> List[Listing]:
+    candidates = extract_listings(source.name, url, html, allowed_areas=config.criteria.postcode_areas)
+    print("Found %s candidates on %s" % (len(candidates), source.name), flush=True)
+    outcome.outcome = "ok" if candidates else "empty"
+    outcome.candidate_count = len(candidates)
+    return candidates
+
+
+def _process_health(
+    outcomes: List[SourceOutcome],
+    store: ListingStore,
+    notifier: Optional[Notifier],
+) -> None:
+    for outcome in outcomes:
+        store.health.record(outcome)
+
+    alertable = store.health.get_newly_alertable()
+    if alertable and notifier is not None:
+        try:
+            notifier.send_text(format_health_alert(alertable))
+        except Exception as exc:
+            print("ERROR health alert failed: %s" % exc, flush=True)
+        store.health.mark_alerted([row["source_key"] for row in alertable])
+
+    recovered = store.health.get_recovered()
+    if recovered and notifier is not None:
+        try:
+            notifier.send_text(format_health_recovery(recovered))
+        except Exception as exc:
+            print("ERROR recovery alert failed: %s" % exc, flush=True)
+        store.health.mark_recovered([row["source_key"] for row in recovered])
 
 
 def _process_candidates(

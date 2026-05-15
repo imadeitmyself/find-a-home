@@ -25,6 +25,7 @@ class SourceConfig:
     urls: List[str]
     enabled: bool = True
     excluded_keywords: List[str] = field(default_factory=list)
+    tier: int = 3  # 1 = Camoufox+proxy, 2 = Camoufox headless, 3 = plain urllib
 
 
 @dataclass

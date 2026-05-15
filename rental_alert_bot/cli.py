@@ -5,7 +5,7 @@ from typing import Optional
 
 from .agent_directory import load_agent_directory
 from .config import load_config, load_env_file, load_source_file
-from .notifiers import build_notifier_from_env, format_alert, get_telegram_bot_info, get_telegram_updates
+from .notifiers import build_notifier_from_env, format_alert, get_telegram_bot_info, get_telegram_updates, _mailgun_notifier_from_env
 from .runner import run_forever, run_once
 from .store import ListingStore
 from .models import Listing
@@ -22,8 +22,10 @@ def main(argv: Optional[list] = None) -> int:
         "seed-current",
         "run",
         "test-alert",
+        "test-mailgun",
         "recent-alerts",
         "telegram-info",
+        "health-status",
         "export-supabase-seed",
         "export-supabase-directory-seed",
     ]:
@@ -70,6 +72,24 @@ def main(argv: Optional[list] = None) -> int:
         finally:
             store.close()
 
+    if args.command == "test-mailgun":
+        import os
+        mailgun = _mailgun_notifier_from_env(config.request_timeout_seconds)
+        if not mailgun:
+            print("Mailgun not configured. Add MAILGUN_API_KEY, MAILGUN_DOMAIN, MAILGUN_TO to .env")
+            return 1
+        try:
+            mailgun.send_text(
+                "find-a-home test email\n\n"
+                "If you received this, Mailgun is configured correctly.\n"
+                "Domain: %s\nTo: %s" % (mailgun.domain, mailgun.recipient)
+            )
+            print("Test email sent via Mailgun to %s" % mailgun.recipient)
+            return 0
+        except Exception as exc:
+            print("Mailgun test failed: %s" % exc)
+            return 1
+
     if args.command == "test-alert":
         notifier = build_notifier_from_env(config.request_timeout_seconds, allow_print=False)
         listing = Listing(
@@ -102,6 +122,26 @@ def main(argv: Optional[list] = None) -> int:
                 seed=False,
                 recent_only_minutes=args.minutes,
             )
+            return 0
+        finally:
+            store.close()
+
+    if args.command == "health-status":
+        store = ListingStore(config.database_path)
+        try:
+            rows = store.health.list_all()
+            if not rows:
+                print("No health data yet. Run the scraper first.")
+                return 0
+            print("%-40s %-10s %5s %5s %s" % ("Source", "Outcome", "Fails", "Empty", "Last checked"))
+            for row in rows:
+                print("%-40s %-10s %5s %5s %s" % (
+                    row["source_name"][:40],
+                    row["last_outcome"],
+                    row["consecutive_failures"],
+                    row["consecutive_empty"],
+                    (row["last_checked_at"] or "")[:19],
+                ))
             return 0
         finally:
             store.close()
