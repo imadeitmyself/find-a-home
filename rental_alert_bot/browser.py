@@ -55,9 +55,9 @@ class BrowserFetcher:
                 "pip install camoufox && python -m camoufox fetch"
             ) from exc
 
-        kwargs: dict = {"headless": True}
+        kwargs: dict = {"headless": True, "geoip": True}
         if self._proxy:
-            kwargs["proxy"] = {"server": self._proxy}
+            kwargs["proxy"] = self._proxy
 
         self._cm = Camoufox(**kwargs)
         self._browser = self._cm.__enter__()
