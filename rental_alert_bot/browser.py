@@ -11,19 +11,38 @@ _JITTER_MIN = 2.0
 _JITTER_MAX = 8.0
 
 
+def _proxy_config() -> Optional[dict]:
+    """
+    Build a Playwright proxy dict from environment variables.
+    Reads BROWSER_PROXY (full URL) or WEBSHARE_* credentials.
+    Returns None if no proxy is configured.
+    """
+    direct = os.environ.get("BROWSER_PROXY", "").strip()
+    if direct:
+        return {"server": direct}
+
+    host = os.environ.get("WEBSHARE_PROXY_HOST", "").strip()
+    port = os.environ.get("WEBSHARE_PROXY_PORT", "80").strip()
+    user = os.environ.get("WEBSHARE_PROXY_USER", "").strip()
+    password = os.environ.get("WEBSHARE_PROXY_PASS", "").strip()
+    if host and user and password:
+        return {"server": "http://%s:%s" % (host, port), "username": user, "password": password}
+
+    return None
+
+
 class BrowserFetcher:
     """
     Context manager that owns one Camoufox browser instance for the lifetime of a run.
-    All Tier 1+2 URLs are fetched through sequential page.goto() calls with random jitter
-    to avoid bot fingerprinting.
+    All URLs are fetched sequentially with random jitter to avoid bot fingerprinting.
 
-    Proxy support: set BROWSER_PROXY=http://user:pass@host:port in the environment.
-    When absent, fetches are headless-only (fine for Tier 2; Tier 1 falls back gracefully).
+    use_proxy=True: routes through Webshare (Tier 1 agents — major chains with strong bot detection).
+    use_proxy=False: headless only, no proxy (Tier 2 agents).
     """
 
-    def __init__(self, timeout_seconds: int = 30) -> None:
+    def __init__(self, timeout_seconds: int = 30, use_proxy: bool = False) -> None:
         self.timeout_seconds = timeout_seconds
-        self._proxy: Optional[str] = os.environ.get("BROWSER_PROXY", "").strip() or None
+        self._proxy = _proxy_config() if use_proxy else None
         self._browser = None
         self._cm = None
 

@@ -55,11 +55,23 @@ def run_once(
             if outcome.outcome not in ("skip",):
                 outcomes.append(outcome)
 
-    # --- Tier 1+2: Camoufox ---
-    if browser_sources:
+    # --- Tier 1: Camoufox + proxy ---
+    tier1_sources = [s for s in browser_sources if s.tier == 1]
+    tier2_sources = [s for s in browser_sources if s.tier == 2]
+
+    for tier_sources, use_proxy, label in [
+        (tier1_sources, True, "T1"),
+        (tier2_sources, False, "T2"),
+    ]:
+        if not tier_sources:
+            continue
         try:
-            with BrowserFetcher(timeout_seconds=config.request_timeout_seconds) as fetcher:
-                for source in browser_sources:
+            with BrowserFetcher(timeout_seconds=config.request_timeout_seconds, use_proxy=use_proxy) as fetcher:
+                if use_proxy and fetcher._proxy:
+                    print("Browser [%s]: proxy enabled via %s" % (label, fetcher._proxy.get("server", "")), flush=True)
+                elif use_proxy:
+                    print("Browser [%s]: no proxy configured, running headless-only" % label, flush=True)
+                for source in tier_sources:
                     for url in source.urls:
                         html, outcome = _fetch_browser(source, url, robots, config, fetcher)
                         if html is not None:
@@ -71,9 +83,8 @@ def run_once(
                         if outcome.outcome not in ("skip",):
                             outcomes.append(outcome)
         except Exception as exc:
-            # camoufox not installed or browser failed to launch — log and record all browser sources as errors
-            print("ERROR browser fetch unavailable: %s" % exc, flush=True)
-            for source in browser_sources:
+            print("ERROR browser [%s] unavailable: %s" % (label, exc), flush=True)
+            for source in tier_sources:
                 for url in source.urls:
                     outcomes.append(SourceOutcome(source.name, url, "error", error_detail=str(exc)))
 
