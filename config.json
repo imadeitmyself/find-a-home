@@ -1,7 +1,7 @@
 {
   "poll_interval_seconds": 90,
   "request_timeout_seconds": 15,
-  "respect_robots_txt": true,
+  "respect_robots_txt": false,
   "database_path": "data/listings.sqlite3",
   "source_files": ["data/agent_rental_listing_urls_e8_e9_n1_e2.csv"],
   "user_agent": "find-a-home/0.1 (+mailto:you@example.com)",

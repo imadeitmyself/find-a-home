@@ -25,6 +25,8 @@ TIER_2_AGENTS = frozenset(
         "Chancellors",
         "Chestertons",
         "Choice Homes",
+        "Ernest-Brooks International",
+        "Hello Neighbour",
         "Ellis & Co",
         "Essential Living",
         "Felicity J. Lord",
@@ -39,6 +41,7 @@ TIER_2_AGENTS = frozenset(
         "Portico",
         "Stirling Ackroyd",
         "Victorstone",
+        "Zen Homes",
     ]
 )
 
