@@ -174,15 +174,16 @@ class EmailNotifier(Notifier):
 class CompositeNotifier(Notifier):
     channel = "composite"
 
-    def __init__(self, notifiers: List[Notifier]) -> None:
+    def __init__(self, notifiers: List[Notifier], health_notifiers: Optional[List[Notifier]] = None) -> None:
         self.notifiers = notifiers
+        self._health_notifiers = health_notifiers if health_notifiers is not None else notifiers
 
     def send(self, listing: Listing, message: str) -> None:
         for notifier in self.notifiers:
             notifier.send(listing, message)
 
     def send_text(self, message: str) -> None:
-        for notifier in self.notifiers:
+        for notifier in self._health_notifiers:
             notifier.send_text(message)
 
 
@@ -198,11 +199,14 @@ class PrintNotifier(Notifier):
 
 def build_notifier_from_env(timeout_seconds: int = 15, allow_print: bool = False) -> Notifier:
     notifiers: List[Notifier] = []
+    telegram_notifiers: List[Notifier] = []
 
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
     if token and chat_id:
-        notifiers.append(TelegramNotifier(token=token, chat_id=chat_id, timeout_seconds=timeout_seconds))
+        tg = TelegramNotifier(token=token, chat_id=chat_id, timeout_seconds=timeout_seconds)
+        notifiers.append(tg)
+        telegram_notifiers.append(tg)
 
     mailgun = _mailgun_notifier_from_env(timeout_seconds)
     if mailgun:
@@ -216,7 +220,9 @@ def build_notifier_from_env(timeout_seconds: int = 15, allow_print: bool = False
         raise RuntimeError("No notifier configured. Set TELEGRAM_BOT_TOKEN or MAILGUN_API_KEY in .env.")
     if len(notifiers) == 1:
         return notifiers[0]
-    return CompositeNotifier(notifiers)
+    # Health alerts (tracker status) go to Telegram only; listing alerts go to all notifiers.
+    health_notifiers = telegram_notifiers if telegram_notifiers else notifiers
+    return CompositeNotifier(notifiers, health_notifiers=health_notifiers)
 
 
 def _mailgun_notifier_from_env(timeout_seconds: int = 15) -> Optional[MailgunNotifier]:
