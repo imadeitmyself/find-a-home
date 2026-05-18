@@ -14,3 +14,5 @@ dist/
 build/
 *.egg-info/
 supabase/.temp/
+pentest/reports/
+data/legacy/

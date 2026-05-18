@@ -16,6 +16,7 @@ cd $APP_DIR
 source $VENV
 git pull
 pip install -e . -q
+sudo systemctl restart find-a-home
 echo "Deploy complete — \$(git log --oneline -1)"
 EOF
 
