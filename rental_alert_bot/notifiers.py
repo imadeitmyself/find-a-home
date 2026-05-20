@@ -24,6 +24,10 @@ class Notifier:
         """Send a plain text message (no Listing context). Used for health alerts."""
         raise NotImplementedError
 
+    def send_report(self, subject: str, body: str) -> None:
+        """Send a long-form report. Defaults to send_text; channels with subjects override."""
+        self.send_text(body)
+
 
 class TelegramNotifier(Notifier):
     channel = "telegram"
@@ -104,6 +108,9 @@ class MailgunNotifier(Notifier):
     def send_text(self, message: str) -> None:
         self._post("find-a-home: crawler alert", message)
 
+    def send_report(self, subject: str, body: str) -> None:
+        self._post(subject, body)
+
     def _post(self, subject: str, body: str) -> None:
         url = "%s/v3/%s/messages" % (self.api_base, self.domain)
         payload = urllib.parse.urlencode(
@@ -155,6 +162,9 @@ class EmailNotifier(Notifier):
 
     def send_text(self, message: str) -> None:
         self._send_email("find-a-home: health alert", message)
+
+    def send_report(self, subject: str, body: str) -> None:
+        self._send_email(subject, body)
 
     def _send_email(self, subject: str, body: str) -> None:
         email = EmailMessage()
@@ -223,6 +233,14 @@ def build_notifier_from_env(timeout_seconds: int = 15, allow_print: bool = False
     # Health alerts (tracker status) go to Telegram only; listing alerts go to all notifiers.
     health_notifiers = telegram_notifiers if telegram_notifiers else notifiers
     return CompositeNotifier(notifiers, health_notifiers=health_notifiers)
+
+
+def build_email_notifier_from_env(timeout_seconds: int = 15) -> Optional[Notifier]:
+    """Returns the configured email notifier (Mailgun or SMTP) without Telegram."""
+    mailgun = _mailgun_notifier_from_env(timeout_seconds)
+    if mailgun:
+        return mailgun
+    return _email_notifier_from_env()
 
 
 def _mailgun_notifier_from_env(timeout_seconds: int = 15) -> Optional[MailgunNotifier]:

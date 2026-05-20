@@ -7,12 +7,22 @@ import pathlib
 from typing import Optional
 
 from .agent_directory import load_agent_directory
-from .config import load_config, load_env_file, load_source_file
-from .notifiers import build_notifier_from_env, format_alert, get_telegram_bot_info, get_telegram_updates, _mailgun_notifier_from_env
+from .config import load_config, load_env_file, load_live_sources, load_source_file
+from .notifiers import (
+    build_email_notifier_from_env,
+    build_notifier_from_env,
+    format_alert,
+    get_telegram_bot_info,
+    get_telegram_updates,
+    _mailgun_notifier_from_env,
+)
+from .reports import build_daily_report
 from .runner import run_forever, run_once
 from .store import ListingStore
 from .models import Listing
 from .supabase_export import write_agent_directory_seed, write_agent_seed
+
+LOG_RETENTION_DAYS = 30
 
 
 def _setup_logging(log_dir: str = "logs") -> None:
@@ -47,6 +57,7 @@ def main(argv: Optional[list] = None) -> int:
         "recent-alerts",
         "telegram-info",
         "health-status",
+        "daily-report",
         "export-supabase-seed",
         "export-supabase-directory-seed",
     ]:
@@ -58,6 +69,9 @@ def main(argv: Optional[list] = None) -> int:
         if name == "recent-alerts":
             command.add_argument("--minutes", type=int, default=60, help="Only alert explicit recent markers within this many minutes.")
             command.add_argument("--dry-run", action="store_true", help="Print qualifying recent matches without sending alerts.")
+        if name == "daily-report":
+            command.add_argument("--dry-run", action="store_true", help="Print the report to stdout instead of emailing it.")
+            command.add_argument("--no-purge", action="store_true", help="Skip the 30-day log purge.")
         if name == "export-supabase-seed":
             command.add_argument(
                 "--agents",
@@ -164,6 +178,33 @@ def main(argv: Optional[list] = None) -> int:
                     row["consecutive_empty"],
                     (row["last_checked_at"] or "")[:19],
                 ))
+            return 0
+        finally:
+            store.close()
+
+    if args.command == "daily-report":
+        store = ListingStore(config.database_path)
+        try:
+            sources = load_live_sources(config)
+            subject, body = build_daily_report(store.health, sources)
+            if args.dry_run:
+                print("Subject: %s" % subject)
+                print()
+                print(body)
+                return 0
+            notifier = build_email_notifier_from_env(config.request_timeout_seconds)
+            if notifier is None:
+                print("No email notifier configured. Set MAILGUN_* or EMAIL_SMTP_* in .env.")
+                return 1
+            try:
+                notifier.send_report(subject, body)
+            except Exception as exc:
+                print("Daily report send failed: %s" % exc)
+                return 1
+            print("Sent daily report via %s" % getattr(notifier, "channel", "unknown"))
+            if not args.no_purge:
+                deleted = store.health.purge_log_older_than(LOG_RETENTION_DAYS)
+                print("Purged %d log rows older than %d days" % (deleted, LOG_RETENTION_DAYS))
             return 0
         finally:
             store.close()
