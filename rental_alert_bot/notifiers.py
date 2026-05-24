@@ -29,6 +29,34 @@ class Notifier:
         self.send_text(body)
 
 
+TELEGRAM_MAX_CHARS = 4000  # Telegram hard-limits a message to 4096; leave headroom.
+
+
+def chunk_text(text: str, limit: int = TELEGRAM_MAX_CHARS) -> List[str]:
+    """Split text into chunks of at most `limit` characters, preferring line breaks.
+
+    A single line longer than `limit` is hard-split so no chunk ever exceeds the limit.
+    """
+    chunks: List[str] = []
+    current = ""
+    for line in text.split("\n"):
+        while len(line) > limit:
+            head, line = line[:limit], line[limit:]
+            if current:
+                chunks.append(current)
+                current = ""
+            chunks.append(head)
+        candidate = line if not current else current + "\n" + line
+        if len(candidate) > limit:
+            chunks.append(current)
+            current = line
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+    return chunks or [""]
+
+
 class TelegramNotifier(Notifier):
     channel = "telegram"
 
@@ -41,6 +69,13 @@ class TelegramNotifier(Notifier):
         self.send_text(message)
 
     def send_text(self, message: str) -> None:
+        for chunk in chunk_text(message):
+            self._send_chunk(chunk)
+
+    def send_report(self, subject: str, body: str) -> None:
+        self.send_text("%s\n\n%s" % (subject, body))
+
+    def _send_chunk(self, message: str) -> None:
         payload = urllib.parse.urlencode(
             {
                 "chat_id": self.chat_id,
@@ -241,6 +276,22 @@ def build_email_notifier_from_env(timeout_seconds: int = 15) -> Optional[Notifie
     if mailgun:
         return mailgun
     return _email_notifier_from_env()
+
+
+def build_report_notifiers_from_env(timeout_seconds: int = 15) -> List[Notifier]:
+    """Channels for the once-a-day tracker-health report: Telegram first, then email.
+
+    Returns every configured channel so the report can fan out to both.
+    """
+    notifiers: List[Notifier] = []
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if token and chat_id:
+        notifiers.append(TelegramNotifier(token=token, chat_id=chat_id, timeout_seconds=timeout_seconds))
+    email = build_email_notifier_from_env(timeout_seconds)
+    if email:
+        notifiers.append(email)
+    return notifiers
 
 
 def _mailgun_notifier_from_env(timeout_seconds: int = 15) -> Optional[MailgunNotifier]:

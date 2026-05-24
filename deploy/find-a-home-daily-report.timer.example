@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Find A Home daily report at 08:00 local time
+
+[Timer]
+# Fires at 08:00 in the server's local timezone. Check/set the VPS timezone
+# with: timedatectl  (e.g. sudo timedatectl set-timezone Europe/London)
+OnCalendar=*-*-* 08:00:00
+# If the machine was off/asleep at 08:00, run as soon as it is back up.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

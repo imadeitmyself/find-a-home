@@ -11,7 +11,7 @@ from .health import SourceOutcome
 from .http import RobotsCache, fetch_text
 from .matcher import match_listing
 from .models import AppConfig, Listing, SourceConfig
-from .notifiers import Notifier, format_alert, format_health_alert, format_health_recovery
+from .notifiers import Notifier, format_alert
 from .store import ListingStore
 from .text import recent_listing_reason
 
@@ -92,7 +92,7 @@ def run_once(
                     outcomes.append(SourceOutcome(source.name, url, "error", error_detail=str(exc)))
 
     if not dry_run and store is not None:
-        _process_health(outcomes, store, notifier)
+        _process_health(outcomes, store)
 
     return accepted_count
 
@@ -159,29 +159,13 @@ def _extract_and_count(
     return candidates
 
 
-def _process_health(
-    outcomes: List[SourceOutcome],
-    store: ListingStore,
-    notifier: Optional[Notifier],
-) -> None:
+def _process_health(outcomes: List[SourceOutcome], store: ListingStore) -> None:
+    # Record every outcome so the daily report can summarise tracker health.
+    # Instant per-run health alerts are intentionally not sent here: tracker
+    # status (which trackers are working vs. failing) is delivered once a day
+    # via the `daily-report` command instead, to avoid a flood of signals.
     for outcome in outcomes:
         store.health.record(outcome)
-
-    alertable = store.health.get_newly_alertable()
-    if alertable and notifier is not None:
-        try:
-            notifier.send_text(format_health_alert(alertable))
-        except Exception as exc:
-            logger.error("Health alert failed: %s", exc)
-        store.health.mark_alerted([row["source_key"] for row in alertable])
-
-    recovered = store.health.get_recovered()
-    if recovered and notifier is not None:
-        try:
-            notifier.send_text(format_health_recovery(recovered))
-        except Exception as exc:
-            logger.error("Recovery alert failed: %s", exc)
-        store.health.mark_recovered([row["source_key"] for row in recovered])
 
 
 def _process_candidates(

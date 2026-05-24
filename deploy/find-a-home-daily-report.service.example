@@ -1,0 +1,10 @@
+[Unit]
+Description=Find A Home daily tracker-health report
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/find-a-home
+EnvironmentFile=/opt/find-a-home/.env
+ExecStart=/usr/bin/python3 -m rental_alert_bot daily-report --config /opt/find-a-home/config.json

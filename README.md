@@ -49,6 +49,38 @@ python3 -m rental_alert_bot test-alert --config config.json
 - `seed-current` stores current accepted matches without sending alerts.
 - `run` polls forever unless `--once` is supplied.
 
+## Notifications
+
+- **Property matches** are sent instantly to every configured channel — Telegram and/or
+  email (Mailgun, or SMTP fallback).
+- **Tracker health** (which sources are working vs. failing) is **not** sent instantly.
+  Per-run polling still records every outcome, but the status is delivered once a day as a
+  digest via the `daily-report` command, so you get one high-level signal instead of a flood.
+
+### Daily tracker-health report
+
+```bash
+python3 -m rental_alert_bot daily-report --config config.json            # send to Telegram + email
+python3 -m rental_alert_bot daily-report --config config.json --dry-run  # print to stdout, send nothing
+```
+
+The report fans out to every configured report channel: Telegram first (if
+`TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` are set), then email (`MAILGUN_*` or `EMAIL_SMTP_*`).
+Long reports are automatically split into multiple Telegram messages (4096-char limit).
+
+To run it automatically at 08:00 on a systemd VPS, install the timer:
+
+```bash
+sudo cp deploy/find-a-home-daily-report.service.example /etc/systemd/system/find-a-home-daily-report.service
+sudo cp deploy/find-a-home-daily-report.timer.example   /etc/systemd/system/find-a-home-daily-report.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now find-a-home-daily-report.timer
+systemctl list-timers find-a-home-daily-report.timer   # confirm next run
+```
+
+The timer fires at 08:00 in the server's local timezone — set it with
+`sudo timedatectl set-timezone Europe/London` if needed.
+
 ## Docker VPS Deployment
 
 ```bash

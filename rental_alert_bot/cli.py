@@ -9,8 +9,8 @@ from typing import Optional
 from .agent_directory import load_agent_directory
 from .config import load_config, load_env_file, load_live_sources, load_source_file
 from .notifiers import (
-    build_email_notifier_from_env,
     build_notifier_from_env,
+    build_report_notifiers_from_env,
     format_alert,
     get_telegram_bot_info,
     get_telegram_updates,
@@ -192,16 +192,24 @@ def main(argv: Optional[list] = None) -> int:
                 print()
                 print(body)
                 return 0
-            notifier = build_email_notifier_from_env(config.request_timeout_seconds)
-            if notifier is None:
-                print("No email notifier configured. Set MAILGUN_* or EMAIL_SMTP_* in .env.")
+            notifiers = build_report_notifiers_from_env(config.request_timeout_seconds)
+            if not notifiers:
+                print(
+                    "No report notifier configured. Set TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID "
+                    "or MAILGUN_* / EMAIL_SMTP_* in .env."
+                )
                 return 1
-            try:
-                notifier.send_report(subject, body)
-            except Exception as exc:
-                print("Daily report send failed: %s" % exc)
+            sent = []
+            for notifier in notifiers:
+                channel = getattr(notifier, "channel", "unknown")
+                try:
+                    notifier.send_report(subject, body)
+                    sent.append(channel)
+                except Exception as exc:
+                    print("Daily report send via %s failed: %s" % (channel, exc))
+            if not sent:
                 return 1
-            print("Sent daily report via %s" % getattr(notifier, "channel", "unknown"))
+            print("Sent daily report via %s" % ", ".join(sent))
             if not args.no_purge:
                 deleted = store.health.purge_log_older_than(LOG_RETENTION_DAYS)
                 print("Purged %d log rows older than %d days" % (deleted, LOG_RETENTION_DAYS))
