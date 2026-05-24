@@ -165,7 +165,13 @@ def is_generic_listing_title(title: str, url: str) -> bool:
         "/properties/lettings",
         "/to-rent",
     )
-    return any(normalized_url.endswith(suffix) for suffix in generic_suffixes)
+    if any(normalized_url.endswith(suffix) for suffix in generic_suffixes):
+        return True
+    if re.search(r"/(flats|houses|apartments|properties)-to-rent(-in-[a-z0-9]+|/)", normalized_url):
+        return True
+    if re.search(r"[?&](area|search|saletype|bedrooms)=", normalized_url):
+        return True
+    return False
 
 
 def recent_listing_reason(text: str, max_age_minutes: int = 60) -> Optional[str]:

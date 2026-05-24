@@ -48,6 +48,30 @@ class MatcherTests(unittest.TestCase):
         self.assertFalse(result.accepted)
         self.assertIn("excluded keyword: short let", result.reasons)
 
+    def test_accepts_labeled_search_page_with_full_data(self):
+        result = match_listing(
+            self.listing(
+                url="https://www.foxtons.co.uk/flats-to-rent/e9/2-bedroom",
+                metadata={"search_page": True},
+            ),
+            self.criteria,
+            self.source,
+        )
+        self.assertTrue(result.accepted, result.reasons)
+
+    def test_rejects_search_page_without_core_data(self):
+        result = match_listing(
+            self.listing(
+                url="https://www.foxtons.co.uk/flats-to-rent/e9/2-bedroom",
+                price_pcm=None,
+                metadata={"search_page": True},
+            ),
+            self.criteria,
+            self.source,
+        )
+        self.assertFalse(result.accepted)
+        self.assertIn("generic search/listing page", result.reasons)
+
     def test_rejects_generic_search_page_match(self):
         result = match_listing(
             self.listing(

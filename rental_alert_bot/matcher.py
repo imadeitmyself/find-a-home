@@ -7,10 +7,17 @@ from .text import contains_keyword, is_generic_listing_title, is_sale_url_or_tex
 def match_listing(listing: Listing, criteria: Criteria, source: SourceConfig) -> MatchResult:
     reasons = []
 
+    has_core_data = (
+        listing.price_pcm is not None
+        and listing.bedrooms is not None
+        and listing.postcode_area is not None
+    )
+    is_search_page = bool(listing.metadata.get("search_page"))
+
     if is_sale_url_or_text(listing.url, listing.raw_text):
         reasons.append("sale listing")
 
-    if is_generic_listing_title(listing.title, listing.url):
+    if is_generic_listing_title(listing.title, listing.url) and not (is_search_page and has_core_data):
         reasons.append("generic search/listing page")
 
     if is_unavailable_text(listing.raw_text):

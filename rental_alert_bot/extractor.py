@@ -25,8 +25,16 @@ PROPERTY_URL_HINTS = (
     "/properties/lettings/",
 )
 SALE_URL_HINTS = ("for-sale", "/sale/", "/sales/", "properties-for-sale")
+PAGINATION_HINTS = ("page=", "/page/", "?p=", "&p=", "pageno", "pagenumber")
 NOISE_LINK_TEXT = {"", "image", "view", "details", "read more", "tenant info", "fees may apply"}
 CANDIDATE_ATTR_RE = re.compile(r"(property|listing|result|card|tile|search|letting|rental)", re.IGNORECASE)
+TITLE_NOISE_RE = re.compile(
+    r"(?:£|gbp)\s*[\d,]+(?:\.\d+)?\s*"
+    r"(?:pcm|pw|p\.?c\.?m\.?|p\.?w\.?|per\s+month|per\s+week|monthly|weekly|pm|p/m)?"
+    r"|\b\d+\s*(?:bed|beds|bedroom|bedrooms)\b"
+    r"|\bstudio\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -172,10 +180,14 @@ def extract_listings(source: str, page_url: str, html: str, allowed_areas: Optio
         if listing:
             listings.append(listing)
 
-    for segment in _window_segments_from_text(parser.full_text(), parser.links):
-        listing = _listing_from_segment(source, page_url, segment, allowed_areas)
-        if listing:
-            listings.append(listing)
+    # Free-text windowing is a fallback for pages without structured cards/JSON-LD.
+    # When structured strategies already found listings, windows only add noisy
+    # multi-card blobs, so skip them.
+    if not listings:
+        for segment in _window_segments_from_text(parser.full_text(), parser.links):
+            listing = _listing_from_segment(source, page_url, segment, allowed_areas)
+            if listing:
+                listings.append(listing)
 
     return _dedupe_listings(listings)
 
@@ -196,6 +208,8 @@ def looks_like_property_url(url: str) -> bool:
     if not lowered or lowered.startswith("#") or lowered.startswith("javascript:"):
         return False
     if any(hint in lowered for hint in SALE_URL_HINTS):
+        return False
+    if any(hint in lowered for hint in PAGINATION_HINTS):
         return False
     return any(hint in lowered for hint in PROPERTY_URL_HINTS)
 
@@ -218,11 +232,26 @@ def _listing_from_segment(
         return None
 
     main_link = _choose_main_link(segment.links)
-    url = urljoin(page_url, main_link.href) if main_link else page_url
     title = _choose_title(text, main_link)
-    external_id = stable_listing_id(url, title)
 
-    return Listing(
+    area_inferred = False
+    if postcode_area is None:
+        postcode_area = _infer_area_from_url(page_url, allowed_areas)
+        area_inferred = postcode_area is not None
+
+    resolved = urljoin(page_url, main_link.href) if main_link else page_url
+    if main_link and not _same_page(resolved, page_url):
+        url = resolved
+        external_id = stable_listing_id(url, title)
+        search_page = False
+    else:
+        url = page_url
+        external_id = stable_listing_id(
+            url, title, fallback_parts=[_normalize_title(title), price_pcm, bedrooms, postcode_area]
+        )
+        search_page = True
+
+    listing = Listing(
         source=source,
         external_id=external_id,
         url=url,
@@ -233,13 +262,18 @@ def _listing_from_segment(
         postcode_area=postcode_area,
         address=title,
     )
+    if search_page:
+        listing.metadata["search_page"] = True
+    if area_inferred:
+        listing.metadata["area_inferred"] = True
+    return listing
 
 
 def _choose_main_link(links: Sequence[Link]) -> Optional[Link]:
     property_links = [link for link in links if looks_like_property_url(link.href)]
     if property_links:
         return _best_text_link(property_links)
-    return _best_text_link(links)
+    return None
 
 
 def _best_text_link(links: Sequence[Link]) -> Optional[Link]:
@@ -269,12 +303,38 @@ def _choose_title(text: str, link: Optional[Link]) -> str:
     return text[:180]
 
 
-def stable_listing_id(url: str, title: str) -> str:
+def stable_listing_id(url: str, title: str, fallback_parts: Optional[Sequence[Any]] = None) -> str:
+    if fallback_parts is not None:
+        joined = "|".join(
+            normalize_space(str(part)).lower()
+            for part in fallback_parts
+            if part is not None and str(part).strip()
+        )
+        if joined:
+            return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:24]
     parsed = urlparse(url)
     identity = parsed.path.rstrip("/") or normalize_space(title).lower()
     if parsed.netloc:
         identity = parsed.netloc.lower() + identity
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+
+
+def _normalize_title(title: str) -> str:
+    return normalize_space(TITLE_NOISE_RE.sub(" ", normalize_space(title or "").lower()))
+
+
+def _same_page(a: str, b: str) -> bool:
+    pa, pb = urlparse(a), urlparse(b)
+    return (pa.netloc.lower(), pa.path.rstrip("/").lower()) == (pb.netloc.lower(), pb.path.rstrip("/").lower())
+
+
+def _infer_area_from_url(page_url: str, allowed_areas: Optional[Iterable[str]]) -> Optional[str]:
+    if not allowed_areas:
+        return None
+    path = urlparse(page_url).path.upper()
+    tokens = set(re.findall(r"[A-Z]{1,2}\d{1,2}[A-Z]?", path))
+    found = [area.upper() for area in allowed_areas if area.upper() in tokens]
+    return found[0] if len(found) == 1 else None
 
 
 def _dedupe_listings(listings: Sequence[Listing]) -> List[Listing]:
@@ -286,7 +346,18 @@ def _dedupe_listings(listings: Sequence[Listing]) -> List[Listing]:
             deduped[key] = listing
             continue
         deduped[key] = _prefer_richer_listing(existing, listing)
-    return list(deduped.values())
+
+    result = list(deduped.values())
+    real_keys = {_content_key(item) for item in result if not item.metadata.get("search_page")}
+    return [
+        item
+        for item in result
+        if not (item.metadata.get("search_page") and _content_key(item) in real_keys)
+    ]
+
+
+def _content_key(listing: Listing) -> Tuple[str, Optional[int], Optional[int]]:
+    return (_normalize_title(listing.title), listing.price_pcm, listing.bedrooms)
 
 
 def _prefer_richer_listing(left: Listing, right: Listing) -> Listing:
@@ -316,9 +387,7 @@ def _links_for_window(window: str, links: Sequence[Link]) -> List[Link]:
         text = normalize_space(link.text)
         if text and text.lower() in lowered:
             matched.append(link)
-    if matched:
-        return matched
-    return [link for link in links if looks_like_property_url(link.href)][:3]
+    return matched
 
 
 def _extract_from_json_scripts(
@@ -368,23 +437,45 @@ def _listing_from_json_dict(
         return None
 
     text = normalize_space(" ".join(part for part in [name or "", str(price or ""), flattened] if part))
-    url = urljoin(page_url, str(url_value)) if url_value else page_url
-    title = name or _choose_title(text, None)
+    title = (name or _choose_title(text, None))[:180]
 
     parsed_price = int(price) if isinstance(price, (int, float)) and 1000 <= int(price) <= 10000 else parse_price_pcm(text)
     parsed_beds = int(bedrooms) if isinstance(bedrooms, (int, float)) else parse_bedrooms(text)
 
-    return Listing(
+    postcode_area = parse_postcode_area(text, allowed_areas)
+    area_inferred = False
+    if postcode_area is None:
+        postcode_area = _infer_area_from_url(page_url, allowed_areas)
+        area_inferred = postcode_area is not None
+
+    resolved = urljoin(page_url, str(url_value)) if url_value else page_url
+    if url_value and not _same_page(resolved, page_url):
+        url = resolved
+        external_id = stable_listing_id(url, title)
+        search_page = False
+    else:
+        url = page_url
+        external_id = stable_listing_id(
+            url, title, fallback_parts=[_normalize_title(title), parsed_price, parsed_beds, postcode_area]
+        )
+        search_page = True
+
+    listing = Listing(
         source=source,
-        external_id=stable_listing_id(url, title),
+        external_id=external_id,
         url=url,
-        title=title[:180],
+        title=title,
         raw_text=text[:4000],
         price_pcm=parsed_price,
         bedrooms=parsed_beds,
-        postcode_area=parse_postcode_area(text, allowed_areas),
-        address=title[:180],
+        postcode_area=postcode_area,
+        address=title,
     )
+    if search_page:
+        listing.metadata["search_page"] = True
+    if area_inferred:
+        listing.metadata["area_inferred"] = True
+    return listing
 
 
 def _first_string(item: Dict[str, Any], keys: Sequence[str]) -> Optional[str]:

@@ -313,12 +313,14 @@ def format_alert(listing: Listing) -> str:
     heading = "New rental match"
     if listing.metadata.get("recent_reason"):
         heading = "%s: %s" % (heading, listing.metadata["recent_reason"])
-    return "\n".join(
-        [
-            heading,
-            "%s" % listing.title,
-            "%s | %s | %s" % (price, beds, area),
-            "Source: %s" % listing.source,
-            listing.url,
-        ]
-    )
+    lines = [
+        heading,
+        "%s" % listing.title,
+        "%s | %s | %s" % (price, beds, area),
+        "Source: %s" % listing.source,
+    ]
+    if listing.metadata.get("search_page"):
+        lines.append("Search page (open and find this listing): %s" % listing.url)
+    else:
+        lines.append(listing.url)
+    return "\n".join(lines)
