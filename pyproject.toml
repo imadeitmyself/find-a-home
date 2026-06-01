@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "find-a-home"
 version = "0.1.0"
-description = "Fast rental listing monitor for estate-agent sites with Telegram/email alerts."
+description = "Fast rental listing monitor with instant email alerts and Telegram health digests."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = []

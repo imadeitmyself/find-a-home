@@ -4,6 +4,7 @@ import unittest
 from rental_alert_bot.notifiers import (
     TELEGRAM_MAX_CHARS,
     TelegramNotifier,
+    build_listing_notifier_from_env,
     build_report_notifiers_from_env,
     chunk_text,
 )
@@ -36,7 +37,7 @@ class ChunkTextTests(unittest.TestCase):
         self.assertEqual("".join(chunks), message)
 
 
-class ReportNotifierTests(unittest.TestCase):
+class EnvNotifierTests(unittest.TestCase):
     EMAIL_KEYS = [
         "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
         "MAILGUN_API_KEY", "MAILGUN_DOMAIN", "MAILGUN_TO", "MAILGUN_FROM",
@@ -55,7 +56,7 @@ class ReportNotifierTests(unittest.TestCase):
     def test_no_config_returns_empty(self):
         self.assertEqual(build_report_notifiers_from_env(), [])
 
-    def test_telegram_and_mailgun_both_included_telegram_first(self):
+    def test_report_notifier_is_telegram_only(self):
         os.environ["TELEGRAM_BOT_TOKEN"] = "tok"
         os.environ["TELEGRAM_CHAT_ID"] = "123"
         os.environ["MAILGUN_API_KEY"] = "key"
@@ -63,7 +64,32 @@ class ReportNotifierTests(unittest.TestCase):
         os.environ["MAILGUN_TO"] = "me@example.com"
 
         channels = [getattr(n, "channel", "?") for n in build_report_notifiers_from_env()]
-        self.assertEqual(channels, ["telegram", "mailgun"])
+        self.assertEqual(channels, ["telegram"])
+
+    def test_listing_notifier_uses_mailgun_not_telegram(self):
+        os.environ["TELEGRAM_BOT_TOKEN"] = "tok"
+        os.environ["TELEGRAM_CHAT_ID"] = "123"
+        os.environ["MAILGUN_API_KEY"] = "key"
+        os.environ["MAILGUN_DOMAIN"] = "mg.example.com"
+        os.environ["MAILGUN_TO"] = "me@example.com"
+
+        notifier = build_listing_notifier_from_env()
+        self.assertEqual(getattr(notifier, "channel", "?"), "mailgun")
+
+    def test_listing_notifier_uses_smtp_fallback(self):
+        os.environ["EMAIL_SMTP_HOST"] = "smtp.example.com"
+        os.environ["EMAIL_FROM"] = "bot@example.com"
+        os.environ["EMAIL_TO"] = "me@example.com"
+
+        notifier = build_listing_notifier_from_env()
+        self.assertEqual(getattr(notifier, "channel", "?"), "email")
+
+    def test_listing_notifier_rejects_telegram_only_config(self):
+        os.environ["TELEGRAM_BOT_TOKEN"] = "tok"
+        os.environ["TELEGRAM_CHAT_ID"] = "123"
+
+        with self.assertRaisesRegex(RuntimeError, "Telegram is digest-only"):
+            build_listing_notifier_from_env()
 
 
 class TelegramSendReportTests(unittest.TestCase):

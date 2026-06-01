@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .health import HealthTracker
 from .models import SourceConfig
@@ -100,6 +100,20 @@ def _area_tag(source_name: str) -> str:
     return ""
 
 
+def _expected_sources(sources: List[SourceConfig]) -> Dict[Tuple[str, str], _UrlStats]:
+    expected: Dict[Tuple[str, str], _UrlStats] = {}
+    for source in sources:
+        if not source.enabled:
+            continue
+        for url in source.urls:
+            expected[(source.name, url)] = _UrlStats(
+                source_name=source.name,
+                url=url,
+                tier=source.tier,
+            )
+    return expected
+
+
 def build_daily_report(
     health: HealthTracker,
     sources: List[SourceConfig],
@@ -110,15 +124,20 @@ def build_daily_report(
     start_today = (now - timedelta(hours=24)).isoformat()
     start_prev = (now - timedelta(hours=48)).isoformat()
 
+    expected = _expected_sources(sources)
+    expected_keys = set(expected.keys())
     tier_by_url: Dict[str, int] = {}
     for src in sources:
         for url in src.urls:
             tier_by_url[url] = src.tier
 
-    today = _gather(health, start_today, end_today, tier_by_url)
-    prev = _gather(health, start_prev, start_today, tier_by_url)
+    today_all = _gather(health, start_today, end_today, tier_by_url)
+    prev_all = _gather(health, start_prev, start_today, tier_by_url)
+    today = {key: stats for key, stats in today_all.items() if key in expected_keys} if expected_keys else {}
+    prev = {key: stats for key, stats in prev_all.items() if key in expected_keys} if expected_keys else {}
     historic_max = health.historic_max_index()
     last_ok = health.last_ok_index()
+    latest_checked = health.latest_checked_index()
     earliest_log = health.log_earliest()
 
     classified_today: Dict[str, List[_UrlStats]] = {"working": [], "failing": [], "empty_historic": []}
@@ -144,9 +163,35 @@ def build_daily_report(
             if _classify(today_stats, hm) == "working":
                 recovered.append(today_stats)
 
+    missing = [expected[key] for key in sorted(expected_keys - set(today.keys()))]
+    stale: List[_UrlStats] = []
+    never_checked: List[_UrlStats] = []
+    for stats in missing:
+        if (stats.source_name, stats.url) in latest_checked:
+            stale.append(stats)
+        else:
+            never_checked.append(stats)
+
+    n_working = len(classified_today["working"])
+    n_failing = len(classified_today["failing"])
+    n_empty = len(classified_today["empty_historic"])
+    n_expected = len(expected)
+    n_checked = len(today)
+    n_stale_or_never = len(stale) + len(never_checked)
+
+    if n_expected == 0:
+        action = "No enabled sources configured"
+    elif n_checked == 0:
+        action = "No fresh crawl data"
+    elif n_failing or n_empty or n_stale_or_never or regressed:
+        action = "Review failing sources"
+    else:
+        action = "Healthy"
+
     lines: List[str] = []
     title_time = now.strftime("%Y-%m-%d %H:%M UTC")
-    lines.append("find-a-home daily report — %s" % title_time)
+    lines.append("find-a-home health digest — %s" % title_time)
+    lines.append("Action: %s" % action)
     lines.append(
         "Window: last 24h (%s → %s)" % (start_today[:16].replace("T", " "), end_today[:16].replace("T", " "))
     )
@@ -154,14 +199,24 @@ def build_daily_report(
         lines.append("Note: log only goes back to %s — report covers a partial window." % earliest_log[:16].replace("T", " "))
     lines.append("")
 
-    n_working = len(classified_today["working"])
-    n_failing = len(classified_today["failing"])
-    n_empty = len(classified_today["empty_historic"])
-    subject = "find-a-home: %d OK · %d failing · %d new · %d recovered" % (
-        n_working, n_failing, len(regressed), len(recovered),
+    subject = "find-a-home health: %s · %d/%d checked · %d failing" % (
+        action, n_checked, n_expected, n_failing,
     )
     if n_empty:
         subject += " · %d empty" % n_empty
+    if n_stale_or_never:
+        subject += " · %d stale" % n_stale_or_never
+    if recovered:
+        subject += " · %d recovered" % len(recovered)
+
+    if n_expected:
+        lines.append(
+            "COVERAGE: %d/%d enabled URLs checked (%d working, %d failing, %d empty, %d stale/never)"
+            % (n_checked, n_expected, n_working, n_failing, n_empty, n_stale_or_never)
+        )
+    else:
+        lines.append("COVERAGE: no enabled URLs configured")
+    lines.append("")
 
     if regressed or recovered:
         lines.append("CHANGED SINCE PRIOR 24H")
@@ -193,6 +248,15 @@ def build_daily_report(
                 lines.append("        %s" % s.url)
         lines.append("")
 
+    if stale or never_checked:
+        lines.append("STALE OR NEVER CHECKED (%d urls)" % n_stale_or_never)
+        for s in sorted(stale + never_checked, key=lambda x: x.source_name):
+            last_checked = latest_checked.get((s.source_name, s.url))
+            status = "last checked %s" % _age_phrase(now, last_checked) if last_checked else "never checked"
+            lines.append("  %s [T%d]: %s" % (s.source_name, s.tier, status))
+            lines.append("    %s" % s.url)
+        lines.append("")
+
     if classified_today["empty_historic"]:
         lines.append("EMPTY BUT HISTORICALLY OK (%d urls)" % n_empty)
         for s in sorted(classified_today["empty_historic"], key=lambda x: x.source_name):
@@ -205,20 +269,11 @@ def build_daily_report(
             lines.append("    %s" % s.url)
         lines.append("")
 
-    lines.append("WORKING (%d urls)" % n_working)
-    if classified_today["working"]:
-        by_agency = defaultdict(list)
-        for s in classified_today["working"]:
-            by_agency[_agency_label(s.source_name)].append(s)
-        for agency in sorted(by_agency.keys()):
-            urls_for_agency = by_agency[agency]
-            urls_for_agency.sort(key=lambda x: _area_tag(x.source_name))
-            for s in urls_for_agency:
-                area = _area_tag(s.source_name) or "—"
-                lines.append(
-                    "  %-30s %-8s [T%d]  %3d ok, %d empty"
-                    % (agency[:30], area, s.tier, s.ok, s.empty)
-                )
+    lines.append("SUMMARY")
+    lines.append("  Working: %d urls" % n_working)
+    lines.append("  Failing: %d urls" % n_failing)
+    lines.append("  Empty but historically OK: %d urls" % n_empty)
+    lines.append("  Stale or never checked: %d urls" % n_stale_or_never)
 
     lines.append("")
     return subject, "\n".join(lines)

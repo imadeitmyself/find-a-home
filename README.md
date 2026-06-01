@@ -5,9 +5,10 @@ Fast rental listing monitor for estate-agent websites. The MVP is tuned for:
 - Areas: E9, E8, N1, E2
 - Beds: exactly 2
 - Budget: GBP 2,750 to GBP 3,750 pcm
-- Alerts: Telegram first, optional email fallback
+- Instant listing alerts: email (Mailgun first, SMTP fallback)
+- Telegram: daily 07:00 high-level source-health digest
 
-The app avoids scraping OnTheMarket directly by default. It polls estate-agent pages, extracts listing candidates from HTML/JSON-LD, filters them, deduplicates them in SQLite, and sends direct alerts for new matches.
+The app avoids scraping OnTheMarket directly by default. It polls estate-agent pages, extracts listing candidates from HTML/JSON-LD, filters them, deduplicates them in SQLite, emails new matches instantly, and sends Telegram a daily health digest.
 
 ## Quick Start
 
@@ -22,6 +23,18 @@ Use `seed-current` once before the real monitor so existing listings are stored 
 
 Before running continuously, edit `config.json` and replace the `user_agent` email with your address.
 
+## Email Setup
+
+Instant property alerts are email-only. Configure Mailgun with `MAILGUN_API_KEY`,
+`MAILGUN_DOMAIN`, and `MAILGUN_TO`, or configure SMTP with `EMAIL_SMTP_HOST`,
+`EMAIL_FROM`, and `EMAIL_TO`.
+
+You can test instant listing delivery with:
+
+```bash
+python3 -m rental_alert_bot test-alert --config config.json
+```
+
 ## Telegram Setup
 
 1. Message `@BotFather` in Telegram and create a bot.
@@ -29,10 +42,11 @@ Before running continuously, edit `config.json` and replace the `user_agent` ema
 3. Send your bot any message.
 4. Visit `https://api.telegram.org/bot<token>/getUpdates` in a browser and copy your chat id into `TELEGRAM_CHAT_ID`.
 
-You can test delivery with:
+Telegram is only used for the daily source-health digest. You can verify the
+configured bot/chat with:
 
 ```bash
-python3 -m rental_alert_bot test-alert --config config.json
+python3 -m rental_alert_bot telegram-info --config config.json
 ```
 
 ## Commands
@@ -51,24 +65,23 @@ python3 -m rental_alert_bot test-alert --config config.json
 
 ## Notifications
 
-- **Property matches** are sent instantly to every configured channel — Telegram and/or
-  email (Mailgun, or SMTP fallback).
-- **Tracker health** (which sources are working vs. failing) is **not** sent instantly.
-  Per-run polling still records every outcome, but the status is delivered once a day as a
-  digest via the `daily-report` command, so you get one high-level signal instead of a flood.
+- **Property matches** are emailed instantly through Mailgun, or SMTP fallback.
+  Telegram never receives listing-level alerts.
+- **Tracker health** (which sources are working vs. failing) is delivered to Telegram
+  once a day via the `daily-report` command. Per-run polling still records every
+  outcome, but Telegram only gets the high-level digest.
 
 ### Daily tracker-health report
 
 ```bash
-python3 -m rental_alert_bot daily-report --config config.json            # send to Telegram + email
+python3 -m rental_alert_bot daily-report --config config.json            # send to Telegram
 python3 -m rental_alert_bot daily-report --config config.json --dry-run  # print to stdout, send nothing
 ```
 
-The report fans out to every configured report channel: Telegram first (if
-`TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` are set), then email (`MAILGUN_*` or `EMAIL_SMTP_*`).
+The report is Telegram-only and requires `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`.
 Long reports are automatically split into multiple Telegram messages (4096-char limit).
 
-To run it automatically at 08:00 on a systemd VPS, install the timer:
+To run it automatically at 07:00 on a systemd VPS, install the timer:
 
 ```bash
 sudo cp deploy/find-a-home-daily-report.service.example /etc/systemd/system/find-a-home-daily-report.service
@@ -78,7 +91,7 @@ sudo systemctl enable --now find-a-home-daily-report.timer
 systemctl list-timers find-a-home-daily-report.timer   # confirm next run
 ```
 
-The timer fires at 08:00 in the server's local timezone — set it with
+The timer fires at 07:00 in the server's local timezone — set it with
 `sudo timedatectl set-timezone Europe/London` if needed.
 
 ## Docker VPS Deployment

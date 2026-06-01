@@ -9,7 +9,7 @@ from typing import Optional
 from .agent_directory import load_agent_directory
 from .config import load_config, load_env_file, load_live_sources, load_source_file
 from .notifiers import (
-    build_notifier_from_env,
+    build_listing_notifier_from_env,
     build_report_notifiers_from_env,
     format_alert,
     get_telegram_bot_info,
@@ -127,7 +127,7 @@ def main(argv: Optional[list] = None) -> int:
             return 1
 
     if args.command == "test-alert":
-        notifier = build_notifier_from_env(config.request_timeout_seconds, allow_print=False)
+        notifier = build_listing_notifier_from_env(config.request_timeout_seconds, allow_print=False)
         listing = Listing(
             source="test",
             external_id="test",
@@ -148,7 +148,7 @@ def main(argv: Optional[list] = None) -> int:
 
     if args.command == "recent-alerts":
         store = ListingStore(config.database_path)
-        notifier = None if args.dry_run else build_notifier_from_env(config.request_timeout_seconds, allow_print=False)
+        notifier = None if args.dry_run else build_listing_notifier_from_env(config.request_timeout_seconds, allow_print=False)
         try:
             run_once(
                 config=config,
@@ -195,8 +195,7 @@ def main(argv: Optional[list] = None) -> int:
             notifiers = build_report_notifiers_from_env(config.request_timeout_seconds)
             if not notifiers:
                 print(
-                    "No report notifier configured. Set TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID "
-                    "or MAILGUN_* / EMAIL_SMTP_* in .env."
+                    "No report notifier configured. Set TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID in .env."
                 )
                 return 1
             sent = []
@@ -262,7 +261,7 @@ def main(argv: Optional[list] = None) -> int:
 
     if args.command == "run":
         store = ListingStore(config.database_path)
-        notifier = build_notifier_from_env(config.request_timeout_seconds, allow_print=False)
+        notifier = build_listing_notifier_from_env(config.request_timeout_seconds, allow_print=False)
         try:
             if args.once:
                 run_once(config=config, store=store, notifier=notifier, dry_run=False, seed=False)

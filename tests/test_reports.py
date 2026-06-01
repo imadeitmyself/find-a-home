@@ -53,19 +53,46 @@ class DailyReportTests(unittest.TestCase):
         ]
         subject, body = build_daily_report(health, sources)
 
-        self.assertIn("find-a-home:", subject)
+        self.assertIn("find-a-home health:", subject)
         self.assertIn("failing", subject)
         self.assertIn("CHANGED SINCE PRIOR 24H", body)
         self.assertIn("Foxtons (E9)", body)  # Should appear in failing/changed
         self.assertIn("FAILING", body)
-        self.assertIn("WORKING", body)
-        self.assertIn("Bigmove", body)
+        self.assertIn("SUMMARY", body)
+        self.assertIn("Working: 2 urls", body)
+
+    def test_flags_enabled_sources_missing_from_window(self) -> None:
+        health = _mk_health()
+        old_ts = (datetime.now(timezone.utc) - timedelta(hours=30)).isoformat()
+        with health.conn:
+            health.conn.execute(
+                "INSERT INTO source_outcome_log (recorded_at, source_name, url, outcome, error_detail) VALUES (?, ?, ?, ?, '')",
+                (old_ts, "Stale Agent (E9)", "https://stale.example/e9", "ok"),
+            )
+
+        sources = [
+            SourceConfig(name="Fresh Agent (E9)", urls=["https://fresh.example/e9"], tier=1),
+            SourceConfig(name="Stale Agent (E9)", urls=["https://stale.example/e9"], tier=2),
+            SourceConfig(name="Never Agent (E9)", urls=["https://never.example/e9"], tier=3),
+        ]
+        _record(health, "Fresh Agent (E9)", "https://fresh.example/e9", "ok")
+
+        subject, body = build_daily_report(health, sources)
+
+        self.assertIn("1/3 checked", subject)
+        self.assertIn("2 stale", subject)
+        self.assertIn("STALE OR NEVER CHECKED", body)
+        self.assertIn("Stale Agent (E9)", body)
+        self.assertIn("last checked", body)
+        self.assertIn("Never Agent (E9)", body)
+        self.assertIn("never checked", body)
 
     def test_empty_log_still_renders(self) -> None:
         health = _mk_health()
         subject, body = build_daily_report(health, sources=[])
-        self.assertIn("find-a-home:", subject)
-        self.assertIn("WORKING (0 urls)", body)
+        self.assertIn("find-a-home health:", subject)
+        self.assertIn("COVERAGE: no enabled URLs configured", body)
+        self.assertNotIn("New rental", body)
 
 
 if __name__ == "__main__":

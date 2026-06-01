@@ -243,31 +243,30 @@ class PrintNotifier(Notifier):
 
 
 def build_notifier_from_env(timeout_seconds: int = 15, allow_print: bool = False) -> Notifier:
-    notifiers: List[Notifier] = []
-    telegram_notifiers: List[Notifier] = []
+    """Backward-compatible alias for instant listing notifications."""
+    return build_listing_notifier_from_env(timeout_seconds=timeout_seconds, allow_print=allow_print)
 
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
-    if token and chat_id:
-        tg = TelegramNotifier(token=token, chat_id=chat_id, timeout_seconds=timeout_seconds)
-        notifiers.append(tg)
-        telegram_notifiers.append(tg)
 
-    mailgun = _mailgun_notifier_from_env(timeout_seconds)
-    if mailgun:
-        notifiers.append(mailgun)
-    elif _email_notifier_from_env():
-        notifiers.append(_email_notifier_from_env())  # type: ignore[arg-type]
+def build_listing_notifier_from_env(timeout_seconds: int = 15, allow_print: bool = False) -> Notifier:
+    """Build the notifier used for instant listing alerts.
 
-    if not notifiers and allow_print:
+    Telegram is intentionally excluded here: it is reserved for the daily health
+    digest so rental matches can stay urgent without turning Telegram into noise.
+    """
+    email = build_email_notifier_from_env(timeout_seconds)
+    if email:
+        return email
+
+    if allow_print:
         return PrintNotifier()
-    if not notifiers:
-        raise RuntimeError("No notifier configured. Set TELEGRAM_BOT_TOKEN or MAILGUN_API_KEY in .env.")
-    if len(notifiers) == 1:
-        return notifiers[0]
-    # Health alerts (tracker status) go to Telegram only; listing alerts go to all notifiers.
-    health_notifiers = telegram_notifiers if telegram_notifiers else notifiers
-    return CompositeNotifier(notifiers, health_notifiers=health_notifiers)
+
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    if token and chat_id:
+        raise RuntimeError(
+            "Telegram is digest-only. Configure Mailgun or SMTP for instant listing alerts."
+        )
+    raise RuntimeError("No email notifier configured. Configure Mailgun or SMTP for instant listing alerts.")
 
 
 def build_email_notifier_from_env(timeout_seconds: int = 15) -> Optional[Notifier]:
@@ -279,18 +278,12 @@ def build_email_notifier_from_env(timeout_seconds: int = 15) -> Optional[Notifie
 
 
 def build_report_notifiers_from_env(timeout_seconds: int = 15) -> List[Notifier]:
-    """Channels for the once-a-day tracker-health report: Telegram first, then email.
-
-    Returns every configured channel so the report can fan out to both.
-    """
+    """Channels for the once-a-day tracker-health report: Telegram only."""
     notifiers: List[Notifier] = []
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
     if token and chat_id:
         notifiers.append(TelegramNotifier(token=token, chat_id=chat_id, timeout_seconds=timeout_seconds))
-    email = build_email_notifier_from_env(timeout_seconds)
-    if email:
-        notifiers.append(email)
     return notifiers
 
 
