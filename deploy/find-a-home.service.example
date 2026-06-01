@@ -5,9 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/find-a-home
-EnvironmentFile=/opt/find-a-home/.env
-ExecStart=/usr/bin/python3 -m rental_alert_bot run --config /opt/find-a-home/config.json
+WorkingDirectory=/home/thibault/find-a-home
+EnvironmentFile=/home/thibault/find-a-home/.env
+ExecStart=/home/thibault/find-a-home/venv/bin/python -m rental_alert_bot run --config /home/thibault/find-a-home/config.json
 Restart=always
 RestartSec=10
 
