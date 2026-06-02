@@ -117,6 +117,62 @@ class ExtractorTests(unittest.TestCase):
         self.assertFalse(matches[0].metadata.get("search_page"))
         self.assertTrue(matches[0].url.endswith("/HAC220227"))
 
+    def test_recovers_deep_link_from_json_reference(self):
+        # Mirrors Foxtons: the visible card yields a search-page URL because its anchor
+        # has no text, while __NEXT_DATA__ holds streetName + a propertyReference that
+        # matches the anchor href. The listing's URL should be patched to the deep link.
+        html = """
+        <html><body>
+          <script type="application/json">
+          {"results": [
+             {"propertyReference": "chpk4331830", "postcodeShort": "E9",
+              "streetName": "Frampton Park Road", "bedrooms": 2, "pricePcm": 3250}
+          ]}
+          </script>
+          <a href="/properties-to-rent/e9/chpk4331830"></a>
+          <a href="/properties-to-rent/e9/1-bedroom">1 bedroom properties to rent in E9</a>
+          <li class="property-card">
+            <span>Frampton Park Road, Hackney, E9</span>
+            <p>2 Beds GBP 3,250 Pcm</p>
+          </li>
+        </body></html>
+        """
+        page_url = "https://www.foxtons.co.uk/properties-to-rent/e9?order_by=latest&page=1"
+        listings = extract_listings("Foxtons (E9)", page_url, html, ["E9"])
+
+        matches = [l for l in listings if l.price_pcm == 3250 and l.bedrooms == 2]
+        self.assertEqual(len(matches), 1)
+        listing = matches[0]
+        self.assertEqual(
+            listing.url, "https://www.foxtons.co.uk/properties-to-rent/e9/chpk4331830"
+        )
+        self.assertTrue(listing.metadata.get("deep_link"))
+
+    def test_no_deep_link_patch_when_street_is_ambiguous(self):
+        # Two flats on the same street with the same bed count produce two candidate URLs;
+        # the signature is ambiguous, so neither visible card is mis-linked.
+        html = """
+        <html><body>
+          <script type="application/json">
+          {"results": [
+             {"propertyReference": "chpk1111111", "postcodeShort": "E9",
+              "streetName": "Morning Lane", "bedrooms": 2, "pricePcm": 3000},
+             {"propertyReference": "chpk2222222", "postcodeShort": "E9",
+              "streetName": "Morning Lane", "bedrooms": 2, "pricePcm": 3200}
+          ]}
+          </script>
+          <a href="/properties-to-rent/e9/chpk1111111"></a>
+          <a href="/properties-to-rent/e9/chpk2222222"></a>
+          <li class="property-card"><span>Morning Lane, Hackney, E9</span><p>2 Beds GBP 3,000 Pcm</p></li>
+        </body></html>
+        """
+        page_url = "https://www.foxtons.co.uk/properties-to-rent/e9?page=1"
+        listings = extract_listings("Foxtons (E9)", page_url, html, ["E9"])
+        matches = [l for l in listings if l.bedrooms == 2]
+        self.assertTrue(matches)
+        for listing in matches:
+            self.assertFalse(listing.metadata.get("deep_link"))
+
     def test_extracts_json_ld_listing(self):
         html = """
         <script type="application/ld+json">
