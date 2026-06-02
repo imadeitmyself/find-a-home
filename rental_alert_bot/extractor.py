@@ -171,6 +171,9 @@ def extract_listings(source: str, page_url: str, html: str, allowed_areas: Optio
     parser = ListingHTMLParser()
     parser.feed(html)
 
+    property_hrefs = _collect_property_hrefs(parser.links, page_url)
+    deep_link_map = _build_deep_link_map(parser.scripts, property_hrefs)
+
     listings: List[Listing] = []
     for listing in _extract_from_json_scripts(source, page_url, parser.scripts, allowed_areas):
         listings.append(listing)
@@ -189,7 +192,9 @@ def extract_listings(source: str, page_url: str, html: str, allowed_areas: Optio
             if listing:
                 listings.append(listing)
 
-    return _dedupe_listings(listings)
+    deduped = _dedupe_listings(listings)
+    _apply_deep_links(deduped, deep_link_map)
+    return deduped
 
 
 def _is_candidate_node(node: Node) -> bool:
@@ -212,6 +217,108 @@ def looks_like_property_url(url: str) -> bool:
     if any(hint in lowered for hint in PAGINATION_HINTS):
         return False
     return any(hint in lowered for hint in PROPERTY_URL_HINTS)
+
+
+# JSON keys that may carry a property's reference/identifier (used to recover deep links).
+REFERENCE_KEYS = (
+    "propertyreference",
+    "reference",
+    "ref",
+    "slug",
+    "propertyid",
+    "instructionreference",
+    "displayid",
+)
+
+
+def _collect_property_hrefs(links: Sequence[Link], page_url: str) -> List[str]:
+    """Resolved on-page anchors that point at an individual property (not the search page)."""
+    hrefs: List[str] = []
+    for link in links:
+        if looks_like_property_url(link.href):
+            resolved = urljoin(page_url, link.href)
+            if not _same_page(resolved, page_url):
+                hrefs.append(resolved)
+    return list(dict.fromkeys(hrefs))
+
+
+def _reference_tokens(item: Dict[str, Any]) -> List[str]:
+    """Identifier-like tokens from a JSON card. Only tokens containing a digit are kept,
+    so generic words can't produce spurious matches while references (e.g. ``chpk3145835``) do."""
+    tokens = set()
+    for key, value in item.items():
+        if key.lower() in REFERENCE_KEYS and isinstance(value, (str, int)):
+            lowered = str(value).lower()
+            for piece in [lowered, *lowered.split("-")]:
+                if len(piece) >= 5 and any(ch.isdigit() for ch in piece):
+                    tokens.add(piece)
+    return sorted(tokens, key=len, reverse=True)
+
+
+def _match_href_by_reference(item: Dict[str, Any], property_hrefs: Sequence[str]) -> Optional[str]:
+    """Find the on-page anchor whose URL embeds one of the card's reference tokens."""
+    for token in _reference_tokens(item):
+        for href in property_hrefs:
+            if token in href.lower():
+                return href
+    return None
+
+
+def _deeplink_signature(street: Any, postcode_area: Optional[str], bedrooms: Optional[int]) -> Optional[Tuple[str, str, int]]:
+    """A (street, postcode, beds) key shared by a JSON card and the visible listing it describes."""
+    if not street or bedrooms is None:
+        return None
+    head = normalize_space(str(street).split(",")[0]).lower()
+    if len(head) < 4:
+        return None
+    return (head, (postcode_area or "").upper(), int(bedrooms))
+
+
+def _build_deep_link_map(scripts: Sequence[str], property_hrefs: Sequence[str]) -> Dict[Tuple[str, str, int], str]:
+    """Recover deep links for sites whose JSON cards carry a reference but no URL field
+    (e.g. Foxtons' ``__NEXT_DATA__``). Keyed by (street, postcode, beds); only unambiguous
+    signatures (exactly one URL) are kept, so two flats on the same street never mis-link."""
+    if not property_hrefs:
+        return {}
+    sig_urls: Dict[Tuple[str, str, int], set] = {}
+    for script in scripts:
+        try:
+            payload = json.loads(script)
+        except json.JSONDecodeError:
+            continue
+        for item in _walk_json_dicts(payload):
+            beds = _first_number_or_string(item, ["bedrooms", "bedroomCount", "numberOfBedrooms"])
+            if not isinstance(beds, (int, float)):
+                continue
+            href = _match_href_by_reference(item, property_hrefs)
+            if not href:
+                continue
+            postcode = item.get("postcodeShort")
+            if not isinstance(postcode, str):
+                match = re.search(r"/([a-z]{1,2}\d{1,2}[a-z]?)/", href.lower())
+                postcode = match.group(1) if match else None
+            sig = _deeplink_signature(
+                _first_string(item, ["streetName", "displayAddress", "name", "address"]),
+                postcode,
+                int(beds),
+            )
+            if sig:
+                sig_urls.setdefault(sig, set()).add(href)
+    return {sig: next(iter(urls)) for sig, urls in sig_urls.items() if len(urls) == 1}
+
+
+def _apply_deep_links(listings: Sequence[Listing], deep_link_map: Dict[Tuple[str, str, int], str]) -> None:
+    """Replace the fallback search-page URL on a listing with its recovered deep link."""
+    if not deep_link_map:
+        return
+    for listing in listings:
+        if not listing.metadata.get("search_page"):
+            continue
+        sig = _deeplink_signature(listing.title, listing.postcode_area, listing.bedrooms)
+        url = deep_link_map.get(sig) if sig else None
+        if url:
+            listing.url = url
+            listing.metadata["deep_link"] = True
 
 
 def _listing_from_segment(
