@@ -117,6 +117,33 @@ class ExtractorTests(unittest.TestCase):
         self.assertFalse(matches[0].metadata.get("search_page"))
         self.assertTrue(matches[0].url.endswith("/HAC220227"))
 
+    def test_extracts_listing_from_inline_data_blob(self):
+        # Mirrors Hamptons (homeflow CMS): listings live in a `var propertyData = {...}`
+        # inline script with display_address / price_value / bedrooms / property_url.
+        html = """
+        <html><body>
+          <script>
+            window.foo = 1;
+            var propertyData = {"properties": [
+              {"display_address": "Chatham Place London E9", "price_value": 3200,
+               "price": "\\u00a33,200 pcm", "bedrooms": 2,
+               "property_url": "/properties/21676153/lettings/P320155"}
+            ]};
+          </script>
+        </body></html>
+        """
+        page_url = "https://www.hamptons.co.uk/london/e9/lettings"
+        listings = extract_listings("Hamptons (E9)", page_url, html, ["E9"])
+        matches = [l for l in listings if l.bedrooms == 2]
+        self.assertEqual(len(matches), 1)
+        listing = matches[0]
+        self.assertEqual(listing.price_pcm, 3200)
+        self.assertEqual(listing.postcode_area, "E9")
+        self.assertEqual(
+            listing.url, "https://www.hamptons.co.uk/properties/21676153/lettings/P320155"
+        )
+        self.assertFalse(listing.metadata.get("search_page"))
+
     def test_recovers_deep_link_from_json_reference(self):
         # Mirrors Foxtons: the visible card yields a search-page URL because its anchor
         # has no text, while __NEXT_DATA__ holds streetName + a propertyReference that

@@ -14,7 +14,7 @@ PW_RE = re.compile(
     r"(?:\u00a3|GBP\s*)\s*([0-9][0-9,]*(?:\.\d+)?)\s*(?:pw|p\.?w\.?|per\s+week|weekly)",
     re.IGNORECASE,
 )
-BED_NUMBER_RE = re.compile(r"\b([1-9]\d*)\s*(?:bed|beds|bedroom|bedrooms)\b", re.IGNORECASE)
+BED_NUMBER_RE = re.compile(r"\b([1-9]\d*)[-\s]*(?:bed|beds|bedroom|bedrooms)\b", re.IGNORECASE)
 BED_PLUS_RE = re.compile(r"\b([1-9]\d*)\s*\+\s*(?:bed|beds|bedroom|bedrooms)\b", re.IGNORECASE)
 STUDIO_RE = re.compile(r"\bstudio\b", re.IGNORECASE)
 

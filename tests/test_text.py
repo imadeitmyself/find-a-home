@@ -24,6 +24,12 @@ class TextParsingTests(unittest.TestCase):
         self.assertEqual(parse_bedrooms("Studio flat"), 0)
         self.assertIsNone(parse_bedrooms("2+ bedrooms"))
 
+    def test_parse_bedrooms_hyphenated(self):
+        # Agents like Knight Bishop render "2-Bedrooms" / "3-Bed" with a hyphen.
+        self.assertEqual(parse_bedrooms("2-Bedrooms Let Agreed Prince Edward Road"), 2)
+        self.assertEqual(parse_bedrooms("3-Bed apartment"), 3)
+        self.assertIsNone(parse_bedrooms("2+ bed"))
+
     def test_parse_postcode_area(self):
         self.assertEqual(parse_postcode_area("Cadogan Terrace, E9", ["E9", "E8"]), "E9")
         self.assertIsNone(parse_postcode_area("Boleyn Road, N16", ["N1"]))

@@ -178,6 +178,9 @@ def extract_listings(source: str, page_url: str, html: str, allowed_areas: Optio
     for listing in _extract_from_json_scripts(source, page_url, parser.scripts, allowed_areas):
         listings.append(listing)
 
+    for listing in _extract_from_data_blobs(source, page_url, html, allowed_areas):
+        listings.append(listing)
+
     for segment in parser.segments:
         listing = _listing_from_segment(source, page_url, segment, allowed_areas)
         if listing:
@@ -516,6 +519,32 @@ def _extract_from_json_scripts(
     return listings
 
 
+# Inline `var X = {...}` data blobs that hold structured listings (e.g. the homeflow
+# CMS used by Hamptons exposes `propertyData`), which a plain <script> isn't parsed as.
+DATA_BLOB_MARKERS = ("propertyData",)
+
+
+def _extract_from_data_blobs(
+    source: str,
+    page_url: str,
+    html: str,
+    allowed_areas: Optional[Iterable[str]],
+) -> List[Listing]:
+    listings: List[Listing] = []
+    decoder = json.JSONDecoder()
+    for marker in DATA_BLOB_MARKERS:
+        for match in re.finditer(r"\b" + re.escape(marker) + r"\s*=\s*(?=[\[{])", html):
+            try:
+                payload, _ = decoder.raw_decode(html, match.end())
+            except (json.JSONDecodeError, ValueError):
+                continue
+            for item in _walk_json_dicts(payload):
+                listing = _listing_from_json_dict(source, page_url, item, allowed_areas)
+                if listing:
+                    listings.append(listing)
+    return listings
+
+
 def _walk_json_dicts(value: Any) -> Iterable[Dict[str, Any]]:
     if isinstance(value, dict):
         yield value
@@ -532,9 +561,9 @@ def _listing_from_json_dict(
     item: Dict[str, Any],
     allowed_areas: Optional[Iterable[str]],
 ) -> Optional[Listing]:
-    url_value = _first_string(item, ["url", "@id", "canonicalUrl", "propertyUrl"])
-    name = _first_string(item, ["name", "title", "displayAddress", "address"])
-    price = _first_number_or_string(item, ["price", "pricePCM", "rent", "amount"])
+    url_value = _first_string(item, ["url", "@id", "canonicalUrl", "propertyUrl", "property_url"])
+    name = _first_string(item, ["name", "title", "displayAddress", "address", "display_address", "address_with_commas"])
+    price = _first_number_or_string(item, ["price", "pricePCM", "rent", "amount", "price_value"])
     bedrooms = _first_number_or_string(item, ["bedrooms", "bedroomCount", "numberOfBedrooms"])
 
     flattened = _flatten_json_text(item)
