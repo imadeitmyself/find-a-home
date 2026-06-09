@@ -1,0 +1,8 @@
+# Foxtons and Savills. The lock prevents a slow run overlapping the next 5-minute slot.
+*/5 * * * * cd /home/thibault/find-a-home && /usr/bin/flock -n /tmp/find-a-home-fast.lock venv/bin/python -m rental_alert_bot run --config config.json --once --schedule-group fast >> logs/cron-fast.log 2>&1
+
+# Sources that have extracted candidates within the last 3 days.
+3,18,33,48 * * * * cd /home/thibault/find-a-home && /usr/bin/flock -n /tmp/find-a-home-standard.lock venv/bin/python -m rental_alert_bot run --config config.json --once --schedule-group standard >> logs/cron-standard.log 2>&1
+
+# Sources with no extracted candidates for 3 days.
+13 * * * * cd /home/thibault/find-a-home && /usr/bin/flock -n /tmp/find-a-home-stale.lock venv/bin/python -m rental_alert_bot run --config config.json --once --schedule-group stale >> logs/cron-stale.log 2>&1

@@ -202,6 +202,19 @@ class HealthTracker:
             ).fetchall()
         }
 
+    def first_checked_index(self) -> Dict[Tuple[str, str], str]:
+        """(source_name, url) → first recorded outcome timestamp."""
+        return {
+            (row["source_name"], row["url"]): row["first_checked_at"]
+            for row in self.conn.execute(
+                """
+                SELECT source_name, url, MIN(recorded_at) AS first_checked_at
+                FROM source_outcome_log
+                GROUP BY source_name, url
+                """
+            ).fetchall()
+        }
+
     def purge_log_older_than(self, days: int) -> int:
         cur = self.conn.execute(
             "DELETE FROM source_outcome_log WHERE recorded_at < datetime('now', ?)",

@@ -18,6 +18,7 @@ from .notifiers import (
 )
 from .reports import build_daily_report
 from .runner import run_forever, run_once
+from .scheduler import DEFAULT_STALE_AFTER_DAYS, SCHEDULE_GROUPS, select_sources_for_schedule
 from .store import ListingStore
 from .models import Listing
 from .supabase_export import write_agent_directory_seed, write_agent_seed
@@ -66,6 +67,17 @@ def main(argv: Optional[list] = None) -> int:
         if name == "run":
             command.add_argument("--once", action="store_true", help="Run one poll cycle and exit.")
             command.add_argument("--interval", type=int, default=None, help="Override polling interval in seconds.")
+            command.add_argument(
+                "--schedule-group",
+                choices=SCHEDULE_GROUPS,
+                help="Only run the fast, standard, or stale source schedule group.",
+            )
+            command.add_argument(
+                "--stale-after-days",
+                type=int,
+                default=DEFAULT_STALE_AFTER_DAYS,
+                help="Move sources without candidates to the stale group after this many days.",
+            )
         if name == "recent-alerts":
             command.add_argument("--minutes", type=int, default=60, help="Only alert explicit recent markers within this many minutes.")
             command.add_argument("--dry-run", action="store_true", help="Print qualifying recent matches without sending alerts.")
@@ -263,8 +275,30 @@ def main(argv: Optional[list] = None) -> int:
         store = ListingStore(config.database_path)
         notifier = build_listing_notifier_from_env(config.request_timeout_seconds, allow_print=False)
         try:
+            if args.schedule_group and not args.once:
+                parser.error("--schedule-group requires --once")
+            scheduled_sources = None
+            if args.schedule_group:
+                scheduled_sources = select_sources_for_schedule(
+                    load_live_sources(config),
+                    store.health,
+                    args.schedule_group,
+                    stale_after_days=args.stale_after_days,
+                )
+                logging.getLogger(__name__).info(
+                    "SCHEDULE [%s]: %d sources",
+                    args.schedule_group,
+                    len(scheduled_sources),
+                )
             if args.once:
-                run_once(config=config, store=store, notifier=notifier, dry_run=False, seed=False)
+                run_once(
+                    config=config,
+                    store=store,
+                    notifier=notifier,
+                    dry_run=False,
+                    seed=False,
+                    sources=scheduled_sources,
+                )
                 return 0
             run_forever(config=config, store=store, notifier=notifier, interval_seconds=args.interval)
             return 0

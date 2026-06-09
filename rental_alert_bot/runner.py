@@ -37,12 +37,17 @@ def run_once(
     dry_run: bool,
     seed: bool,
     recent_only_minutes: Optional[int] = None,
+    sources: Optional[Iterable[SourceConfig]] = None,
 ) -> int:
     robots = RobotsCache(config.user_agent, config.request_timeout_seconds)
     accepted_count = 0
     outcomes: List[SourceOutcome] = []
 
-    live_sources = [s for s in load_live_sources(config) if s.enabled]
+    live_sources = [
+        source
+        for source in (sources if sources is not None else load_live_sources(config))
+        if source.enabled
+    ]
     plain_sources = [s for s in live_sources if s.tier == 3]
     browser_sources = [s for s in live_sources if s.tier in (1, 2)]
 

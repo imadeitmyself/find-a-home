@@ -56,12 +56,16 @@ python3 -m rental_alert_bot dry-run --config config.json
 python3 -m rental_alert_bot seed-current --config config.json
 python3 -m rental_alert_bot run --config config.json --once
 python3 -m rental_alert_bot run --config config.json --interval 60
+python3 -m rental_alert_bot run --config config.json --once --schedule-group fast
 python3 -m rental_alert_bot test-alert --config config.json
 ```
 
 - `dry-run` fetches sources and prints accepted/rejected candidates without writing to SQLite or sending alerts.
 - `seed-current` stores current accepted matches without sending alerts.
 - `run` polls forever unless `--once` is supplied.
+- `run --once --schedule-group fast|standard|stale` supports separate cron cadences.
+  Foxtons and Savills are always `fast`; other sources become `stale` after
+  three days without any extracted candidates.
 
 ## Notifications
 
@@ -105,6 +109,9 @@ docker compose up -d --build
 On a small VPS, keep `data/` mounted so the seen-listing database survives restarts.
 
 There is also a `deploy/find-a-home.service.example` file if you prefer `systemd` over Docker.
+For source-specific scheduling, `deploy/find-a-home.crontab.example` runs Foxtons
+and Savills every 5 minutes, productive sources every 15 minutes, and stale
+sources once an hour.
 
 ## Tuning Sources
 
