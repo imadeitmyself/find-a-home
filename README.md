@@ -111,7 +111,8 @@ On a small VPS, keep `data/` mounted so the seen-listing database survives resta
 There is also a `deploy/find-a-home.service.example` file if you prefer `systemd` over Docker.
 For source-specific scheduling, `deploy/find-a-home.crontab.example` runs Foxtons
 and Savills every 5 minutes, productive sources every 15 minutes, and stale
-sources once an hour.
+sources once an hour. Set `CRON_SCHEDULER_ENABLED=true` in `.env` when installing
+these jobs so a legacy continuous systemd service stays idle.
 
 ## Tuning Sources
 

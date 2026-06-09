@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Iterable, List, Optional, Tuple
 
 from .browser import BrowserFetcher
-from .config import load_live_sources
+from .config import env_bool, load_live_sources
 from .extractor import extract_listings
 from .health import SourceOutcome
 from .http import RobotsCache, fetch_text
@@ -24,6 +25,11 @@ def run_forever(
     notifier: Notifier,
     interval_seconds: Optional[int] = None,
 ) -> None:
+    if env_bool(os.environ, "CRON_SCHEDULER_ENABLED"):
+        logger.warning("Continuous runner idle: CRON_SCHEDULER_ENABLED is set")
+        while True:
+            time.sleep(3600)
+
     interval = interval_seconds or config.poll_interval_seconds
     while True:
         run_once(config=config, store=store, notifier=notifier, dry_run=False, seed=False)

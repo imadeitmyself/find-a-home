@@ -1,9 +1,11 @@
 import sqlite3
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from rental_alert_bot.health import HealthTracker
 from rental_alert_bot.models import SourceConfig
+from rental_alert_bot.runner import run_forever
 from rental_alert_bot.scheduler import select_sources_for_schedule
 
 
@@ -60,6 +62,17 @@ class SchedulerTests(unittest.TestCase):
         selected = select_sources_for_schedule([source], self.health, "standard", now=NOW)
 
         self.assertEqual(selected, [source])
+
+    @patch.dict("os.environ", {"CRON_SCHEDULER_ENABLED": "true"})
+    def test_continuous_runner_stays_idle_when_cron_scheduler_is_enabled(self):
+        with patch(
+            "rental_alert_bot.runner.time.sleep",
+            side_effect=RuntimeError("stop idle loop"),
+        ) as sleep:
+            with self.assertRaisesRegex(RuntimeError, "stop idle loop"):
+                run_forever(config=None, store=None, notifier=None)
+
+        sleep.assert_called_once_with(3600)
 
     def _record_history(self, source, first_checked, last_ok=None):
         url = source.urls[0]
