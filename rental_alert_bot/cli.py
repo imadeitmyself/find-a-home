@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import logging
 import logging.handlers
 import pathlib
@@ -272,6 +273,14 @@ def main(argv: Optional[list] = None) -> int:
         return 0
 
     if args.command == "run":
+        now = datetime.datetime.now()
+        # Monday=0 … Saturday=5, Sunday=6; only crawl 08:00–20:00 Mon–Sat
+        if now.weekday() == 6 or not (8 <= now.hour < 20):
+            logging.getLogger("rental_alert_bot").info(
+                "Outside crawl hours (08:00-20:00 Mon-Sat) — skipping run."
+            )
+            return 0
+
         store = ListingStore(config.database_path)
         notifier = build_listing_notifier_from_env(config.request_timeout_seconds, allow_print=False)
         try:
