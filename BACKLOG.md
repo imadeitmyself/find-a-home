@@ -1,6 +1,23 @@
 # Product Price Tracker — Backlog
 
-Deferred items, captured during planning. See `PLAN.md` for the v1 scope.
+Deferred items, captured during planning. See `PLAN.md` for the v1 scope and
+`PRICE_TRACKER_BRIEF.md` for the full self-contained build brief.
+
+## v2 — LLM "view-as-user" crawler (a feature in itself)
+
+v1 flags any JS-rendered page where no price can be parsed (no Shopify/Woo JSON,
+no schema.org) as `needs_llm_crawler` and surfaces it on the dashboard — but does
+not resolve it. This feature resolves those:
+
+- Render the page as a user would (Camoufox), capture DOM/text and/or screenshot,
+  and have an LLM read out `price`, `variant`, `in_stock`.
+- **Requires a research spike first** — compare options and report token cost vs.
+  accuracy before committing:
+  - vision-on-screenshot vs. text/DOM extraction,
+  - browser-agent (computer-use / browser-use style) vs. single-shot,
+  - per-page cost at the chosen cadence × number of flagged links,
+  - accuracy on a labeled sample of real flagged pages.
+- Keep it off the daily deterministic path; run only on flagged links, cadence TBD.
 
 ## v2 — true "best price" (landed cost)
 

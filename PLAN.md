@@ -96,27 +96,34 @@ Try cheapest/most-reliable first:
    clean JSON (large share of watersports retailers run Shopify). No render.
 2. **WooCommerce** — REST / Store API.
 3. **`schema.org/Product` + `Offer`** — price + `availability` from JSON-LD.
-4. **Rendered HTML** (Camoufox) — last resort.
-5. **LLM extraction** — fallback when all above are empty.
+4. **Rendered HTML** (Camoufox) — last deterministic resort.
+5. **Parse-health flag** — if the page is JS-rendered and none of 1–4 yield a
+   price, flag the link `needs_llm_crawler` (distinct from "empty") and surface it
+   in the dashboard. The LLM "view-as-user" crawler that resolves these is a v2
+   feature with its own research spike (see `BACKLOG.md` / `PRICE_TRACKER_BRIEF.md`).
 
 Extract per poll: `price`, `currency`, `in_stock` (bool / availability), and the
 matched variant. Use conditional GET (ETag/Last-Modified) to keep daily polling
 cheap and polite.
 
-### 4. Opportunity state machine (persistent)
+### 4. Opportunity state machine (persistent — never expires)
 Replaces `find-a-home`'s "seen once" dedup.
 
 ```
         price ≤ target detected
    (none) ─────────────────────────▶ OPEN  ──(re-confirmed, price holds)──▶ stays OPEN
-                                       │  └─(new lower low)─▶ re-ping, stays OPEN
-                                       ├─(price rises above target / OOS)─▶ EXPIRED
-                                       └─(user dismisses in dashboard)────▶ DISMISSED
+                                       │  ├─(new lower low)─▶ re-ping, stays OPEN
+                                       │  ├─(price rises > target)─▶ stays OPEN + flagged
+                                       │  │   "price went up (promo may have ended)";
+                                       │  │   reseller stays tracked, keep pinging daily
+                                       └──┴─(user dismisses in dashboard)────▶ DISMISSED
 ```
 
+- **No EXPIRED state.** A price rise may just be the end of a promo, so we keep the
+  reseller and keep pinging daily — the goal is completeness, not pruning.
 - Alert fires once when an opportunity OPENS (and optionally on a new lower low).
-- OPEN opportunities persist on the dashboard until expired or dismissed.
-- DISMISSED can feed preference learning (see below).
+- OPEN opportunities persist on the dashboard until the user dismisses them.
+- DISMISSED is the only way to close one, and can feed preference learning (below).
 
 ### 5. Preferences (`PREFERENCES.md`) — two layers
 - **Hard criteria** → structured columns (target price, size, in-stock-only).
