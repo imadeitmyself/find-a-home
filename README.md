@@ -168,3 +168,11 @@ psql "$SUPABASE_DB_URL" -f supabase/agent_directory_seed.sql
 ```bash
 python3 -m unittest discover -s tests
 ```
+
+## Related: magnet-grab
+
+This repo also ships [`magnet_grab/`](magnet_grab/README.md) — a small companion
+service that downloads torrents on the VPS from a magnet link you paste on your
+phone, then pings you on Telegram (reusing this project's bot token) with a
+download link per file. Run it with `python -m magnet_grab serve`. See
+[`magnet_grab/README.md`](magnet_grab/README.md) for setup.
