@@ -1,0 +1,15 @@
+[Unit]
+Description=magnet-grab — magnet link downloader with Telegram notifications
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/thibault/find-a-home
+EnvironmentFile=/home/thibault/find-a-home/.env
+ExecStart=/home/thibault/find-a-home/venv/bin/python -m magnet_grab serve
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -17,3 +17,5 @@ build/
 supabase/.temp/
 pentest/
 data/legacy/
+downloads/
+magnet_grab/downloads/
