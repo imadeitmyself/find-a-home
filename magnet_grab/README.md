@@ -9,10 +9,20 @@ It lives in the same repo as find-a-home and **reuses the same Telegram bot**
 standard library; the only external dependency is the `aria2c` binary, which
 does the actual BitTorrent work.
 
+## Two ways to trigger a download from your phone
+
+1. **Text the bot a magnet link** (easiest on the move). With `serve` running,
+   just send the magnet as a Telegram message to the same bot find-a-home uses.
+   It replies `🧲 Queued: …`, downloads it, then sends the per-file links. Only
+   messages from your `TELEGRAM_CHAT_ID` are accepted. Disable with
+   `MAGNET_GRAB_TELEGRAM_POLL=false`.
+2. **The web form** — open the bookmarked page and paste a magnet. Handy when
+   you want to see recent downloads and browse files.
+
 ## How it works
 
-1. You open a small web page on the VPS (bookmark it on your phone) and paste a
-   magnet link, e.g. `magnet:?xt=urn:btih:297C945AB4913AE6D215AA1FD61739A8B9A12534`.
+1. You send the bot a magnet (or paste it into the web page on the VPS), e.g.
+   `magnet:?xt=urn:btih:297C945AB4913AE6D215AA1FD61739A8B9A12534`.
 2. The server hands the magnet to `aria2c`, which downloads it into a folder
    named after the torrent's infohash.
 3. When it finishes, you get a Telegram message:
@@ -75,7 +85,8 @@ journalctl -u magnet-grab -f      # watch the logs
 ## Commands
 
 ```bash
-python -m magnet_grab serve            # run the HTTP server (normal mode)
+python -m magnet_grab serve            # HTTP server + Telegram magnet-trigger (normal mode)
+python -m magnet_grab poll             # only the Telegram magnet-trigger (no HTTP server)
 python -m magnet_grab add "magnet:?xt=urn:btih:..."   # download one magnet now, then exit
 python -m magnet_grab telegram-test    # verify the bot token + send a test message
 ```

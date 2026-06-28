@@ -5,10 +5,11 @@ Mirrors find-a-home's notifier so the same bot token works for both projects.
 
 from __future__ import annotations
 
+import json
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import List
+from typing import List, Optional
 
 TELEGRAM_MAX_CHARS = 4000  # Telegram hard-limits a message to 4096; leave headroom.
 
@@ -66,6 +67,25 @@ class TelegramClient:
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError("Telegram send failed with HTTP %s: %s" % (exc.code, body)) from exc
+
+
+    def get_updates(self, offset: Optional[int] = None, long_poll_seconds: int = 30) -> list:
+        """Long-poll for new messages. Returns the list of update objects."""
+        params = {"timeout": long_poll_seconds, "allowed_updates": '["message"]'}
+        if offset is not None:
+            params["offset"] = offset
+        url = "https://api.telegram.org/bot%s/getUpdates?%s" % (
+            self.token,
+            urllib.parse.urlencode(params),
+        )
+        request = urllib.request.Request(url)
+        with urllib.request.urlopen(
+            request, timeout=long_poll_seconds + self.timeout_seconds
+        ) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+        if not payload.get("ok", False):
+            raise RuntimeError("Telegram getUpdates failed: %s" % payload)
+        return payload.get("result", [])
 
 
 def get_bot_info(token: str, timeout_seconds: int = 20) -> str:

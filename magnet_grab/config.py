@@ -35,6 +35,7 @@ class Config:
     telegram_chat_id: str
     aria2c_path: str
     request_timeout: int
+    telegram_poll: bool = True
 
     @property
     def telegram_enabled(self) -> bool:
@@ -67,4 +68,11 @@ def load_config(env=None) -> Config:
         telegram_chat_id=env.get("TELEGRAM_CHAT_ID", "").strip(),
         aria2c_path=env.get("MAGNET_GRAB_ARIA2C", "aria2c").strip() or "aria2c",
         request_timeout=int(env.get("MAGNET_GRAB_TIMEOUT", "20") or "20"),
+        telegram_poll=_env_bool(env.get("MAGNET_GRAB_TELEGRAM_POLL"), default=True),
     )
+
+
+def _env_bool(value, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
