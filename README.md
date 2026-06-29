@@ -6,7 +6,7 @@ Fast rental listing monitor for estate-agent websites. The MVP is tuned for:
 - Beds: exactly 2
 - Budget: GBP 2,750 to GBP 3,750 pcm
 - Instant listing alerts: email (Mailgun first, SMTP fallback)
-- Telegram: daily 07:00 high-level source-health digest
+- Telegram: high-level source-health digest (the daily 07:00 automated job is currently turned off; run `daily-report` manually as needed)
 
 The app avoids scraping OnTheMarket directly by default. It polls estate-agent pages, extracts listing candidates from HTML/JSON-LD, filters them, deduplicates them in SQLite, emails new matches instantly, and sends Telegram a daily health digest.
 
@@ -85,6 +85,12 @@ python3 -m rental_alert_bot daily-report --config config.json --dry-run  # print
 The report is Telegram-only and requires `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`.
 Long reports are automatically split into multiple Telegram messages (4096-char limit).
 
+> **The scheduled daily monitoring job is currently turned off.** Neither the
+> systemd timer below nor the cron entry in `deploy/find-a-home.crontab.example`
+> is active. You can still run `daily-report` by hand at any time. To turn the
+> automated digest back on, follow the timer steps below (or uncomment the
+> `daily-report` line in the crontab example).
+
 To run it automatically at 07:00 on a systemd VPS, install the timer:
 
 ```bash
@@ -97,6 +103,12 @@ systemctl list-timers find-a-home-daily-report.timer   # confirm next run
 
 The timer fires at 07:00 in the server's local timezone — set it with
 `sudo timedatectl set-timezone Europe/London` if needed.
+
+If the timer is already installed and running, disable it with:
+
+```bash
+sudo systemctl disable --now find-a-home-daily-report.timer
+```
 
 ## Docker VPS Deployment
 

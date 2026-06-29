@@ -10,5 +10,5 @@
 # Daily auto-update. One-shot cron jobs pick up the new code without restarting a service.
 0 4 * * * cd /home/thibault/find-a-home && git pull --ff-only >> logs/deploy.log 2>&1 && venv/bin/pip install -e . -q >> logs/deploy.log 2>&1
 
-# Daily fetch outcomes report at 07:30 UTC.
-30 7 * * * cd /home/thibault/find-a-home && venv/bin/python -m rental_alert_bot daily-report --config config.json >> logs/daily-report.log 2>&1
+# Daily fetch outcomes report at 07:30 UTC. (Disabled — re-enable by uncommenting.)
+# 30 7 * * * cd /home/thibault/find-a-home && venv/bin/python -m rental_alert_bot daily-report --config config.json >> logs/daily-report.log 2>&1
